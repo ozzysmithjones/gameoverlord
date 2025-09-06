@@ -1,0 +1,15 @@
+{
+    "configurations": [
+        {
+            "name": "Debug GameOverlord",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}\\out\\build\\gcc\\gameoverlord.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}\\out\\build\\gcc",
+            "environment": [],
+            "externalConsole": false,
+        }
+    ]
+}
