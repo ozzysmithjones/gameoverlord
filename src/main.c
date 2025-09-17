@@ -3,7 +3,7 @@
 #include "platform_layer.h"
 
 int main(void) {
-    create_platform_layer();
+    create_platform_layer(NULL);
 
     window w;
     if (create_window(&w, "Game Overlord", 800, 600, WINDOW_MODE_WINDOWED) != RESULT_SUCCESS) {
@@ -24,8 +24,6 @@ int main(void) {
         if (is_key_down(input_state, KEY_SPACE)) {
             printf("Space key pressed!\n");
         }
-
-
         
     }
 

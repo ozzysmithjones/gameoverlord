@@ -4,14 +4,6 @@ project(gameoverlord VERSION 0.1.0 LANGUAGES C)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Disable exceptions
-if(MSVC)
-    add_compile_options(/EHs-c-)
-    add_definitions(-D_HAS_EXCEPTIONS=0)
-else()
-    add_compile_options(-fno-exceptions)
-endif()
-
 # Glob source files
 file(GLOB_RECURSE SOURCES
 "src/*.c"
@@ -21,3 +13,22 @@ file(GLOB_RECURSE SOURCES
 # Update executable with source files
 add_executable(gameoverlord ${SOURCES})
 
+
+# Find Vulkan package
+find_package(Vulkan REQUIRED)
+
+# Include Vulkan directories
+target_include_directories(gameoverlord PRIVATE ${Vulkan_INCLUDE_DIRS})
+
+# Link against Vulkan
+target_link_directories(gameoverlord PRIVATE ${Vulkan_LIBRARY_DIRS})
+target_link_libraries(gameoverlord PRIVATE Vulkan::Vulkan)
+
+# If you're on Windows and need to link with the Vulkan SDK directly
+if(WIN32)
+    # You might need to set Vulkan SDK path if CMake can't find it automatically
+    # set(VULKAN_SDK_PATH "C:/VulkanSDK/x.x.x.x")
+    # target_include_directories(gameoverlord PRIVATE "${VULKAN_SDK_PATH}/Include")
+    # target_link_directories(gameoverlord PRIVATE "${VULKAN_SDK_PATH}/Lib")
+    # target_link_libraries(gameoverlord PRIVATE vulkan-1)
+endif()

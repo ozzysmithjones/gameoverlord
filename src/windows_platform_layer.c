@@ -4,18 +4,46 @@
 #include <windowsx.h>
 #include "platform_layer.h"
 
+bump_allocator permanent_allocator;
+bump_allocator temp_allocator;
+
 // Native memory information structure, filled during platform layer initialization. Contains page size and memory limits for memory allocation functions.
 static SYSTEM_INFO native_memory_info;
 
-result create_platform_layer(void) {
+// Used by vulkan renderer to get the HWND from a window struct.
+HWND get_window_handle(window* w);
+
+result create_platform_layer(memory_requirements* requirements) {
     // Init the native memory info structure. So we don't need to keep quering the OS for page size and memory limits.
     GetSystemInfo(&native_memory_info);
+
+    memory_requirements default_requirements = {
+        .min_temp_allocator_size = 16 * 1024 * 1024,
+        .recommended_temp_allocator_size = 64 * 1024 * 1024,
+        .min_permanent_allocator_size = 16 * 1024 * 1024,
+        .recommended_permanent_allocator_size = SIZE_MAX
+    };
+
+    if (requirements == NULL) {
+        requirements = &default_requirements;
+    }
+
+    if (create_bump_allocator(&temp_allocator, requirements->min_temp_allocator_size, requirements->recommended_temp_allocator_size) != RESULT_SUCCESS) {
+        BUG("Failed to create temporary allocator, probably not enough virtual memory available.");
+        return RESULT_FAILURE;
+    }
+
+    if (create_bump_allocator(&permanent_allocator, requirements->min_permanent_allocator_size, requirements->recommended_permanent_allocator_size) != RESULT_SUCCESS) {
+        BUG("Failed to create permanent allocator, probably not enough remaining virtual memory available.");
+        return RESULT_FAILURE;
+    }
 
     return RESULT_SUCCESS;
 }
 
 void destroy_platform_layer(void) {
-
+    destroy_bump_allocator(&temp_allocator);
+    destroy_bump_allocator(&permanent_allocator);
 }
 
 result create_bump_allocator(bump_allocator* allocator, size_t min_capacity, size_t max_capacity) {
@@ -107,7 +135,6 @@ void* bump_allocate(bump_allocator* allocator, size_t alignment, size_t bytes) {
     return (LPBYTE)allocator->base + aligned;
 }
 
-
 typedef struct input {
     uint64_t keys_pressed_bitset[4];
     uint64_t keys_modified_this_frame_bitset[4];
@@ -126,6 +153,13 @@ typedef struct {
 
 STATIC_ASSERT(sizeof(window) == sizeof(window_internals), window_struct_too_small);
 STATIC_ASSERT(alignof(window) >= alignof(window_internals), window_struct_misaligned);
+
+
+HWND get_window_handle(window* w) {
+    window_internals* win = (window_internals*)w;
+    return win->handle;
+}
+
 
 static LRESULT window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     window_internals* w = (window_internals*)GetWindowLongPtr(hwnd, GWLP_USERDATA);

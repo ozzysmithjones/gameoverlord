@@ -14,7 +14,18 @@ For example on windows, the native page size is queried during initialization an
 
 */
 
-result create_platform_layer(void);
+typedef struct {
+    size_t min_temp_allocator_size;
+    size_t recommended_temp_allocator_size;
+    size_t min_permanent_allocator_size;
+    size_t recommended_permanent_allocator_size;
+} memory_requirements;
+
+
+// Create the platform layer, including global allocators. Global allocators will reserve at least the minimum sizes specified in the memory requirements struct. 
+// If you pass NULL, the default values will be used. By default, the temporary allocator will reserve 16 MB minimum and 64 MB recommended, and the permanent allocator will reserve 16 MB minimum and as much as possible recommended.
+// You can set the recommended sizes to SIZE_MAX in the memory requirements to reserve as much memory as possible (up to the limits of the OS).
+result create_platform_layer(memory_requirements* requirements);
 void destroy_platform_layer(void);
 
 /*
@@ -30,6 +41,9 @@ typedef struct {
     size_t capacity;
 } bump_allocator;
 
+extern bump_allocator permanent_allocator; // A global permanent allocator for any allocation that should live for the entire program lifetime.
+extern bump_allocator temp_allocator; // A global temporary allocator for short lived allocations. You should reset this allocator regularly to avoid running out of memory (like the end of each frame).
+
 /// @brief Create a bump allocator with at least min_capacity bytes and at most max_capacity bytes. It will prioritize reserving as close to max_capacity as possible.
 /// Anything below min_capacity will result in failure.
 /// @param allocator Pointer to the bump allocator to create.
@@ -39,6 +53,7 @@ typedef struct {
 result create_bump_allocator(bump_allocator* allocator, size_t min_capacity, size_t max_capacity);
 void destroy_bump_allocator(bump_allocator* allocator);
 void* bump_allocate(bump_allocator* allocator, size_t alignment, size_t bytes);
+
 static inline void reset_bump_allocator(bump_allocator* allocator) {
     allocator->used_bytes = 0;
 }
