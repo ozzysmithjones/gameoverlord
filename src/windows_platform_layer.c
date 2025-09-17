@@ -2,6 +2,12 @@
 #define NOMINMAX
 #include <windows.h>
 #include <windowsx.h>
+
+/* Need relevant includes for creating a window surface for vulkan graphics API*/
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_win32.h>
+
+#include "renderer.h"
 #include "platform_layer.h"
 
 bump_allocator permanent_allocator;
@@ -9,9 +15,6 @@ bump_allocator temp_allocator;
 
 // Native memory information structure, filled during platform layer initialization. Contains page size and memory limits for memory allocation functions.
 static SYSTEM_INFO native_memory_info;
-
-// Used by vulkan renderer to get the HWND from a window struct.
-HWND get_window_handle(window* w);
 
 result create_platform_layer(memory_requirements* requirements) {
     // Init the native memory info structure. So we don't need to keep quering the OS for page size and memory limits.
@@ -149,17 +152,40 @@ typedef struct {
     uint32_t width;
     uint32_t height;
     input input_state;
+    renderer renderer;
 } window_internals;
 
 STATIC_ASSERT(sizeof(window) == sizeof(window_internals), window_struct_too_small);
 STATIC_ASSERT(alignof(window) >= alignof(window_internals), window_struct_misaligned);
 
+// Vulkan API related functions that need to be implemented in the platform layer .c file.
 
-HWND get_window_handle(window* w) {
-    window_internals* win = (window_internals*)w;
-    return win->handle;
+VkSurfaceKHR create_window_surface(VkInstance instance, window* window) {
+    ASSERT(instance != VK_NULL_HANDLE, return VK_NULL_HANDLE, "Vulkan instance cannot be NULL");
+    ASSERT(window != NULL, return VK_NULL_HANDLE, "Window pointer cannot be NULL");
+    window_internals* w = (window_internals*)&window->internals;
+#ifdef _WIN32
+    VkWin32SurfaceCreateInfoKHR create_info = {
+        .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
+        .hinstance = GetModuleHandle(NULL),
+        .hwnd = w->handle,
+    };
+#endif
+    VkSurfaceKHR surface;
+    if (vkCreateWin32SurfaceKHR(instance, &create_info, NULL, &surface) != VK_SUCCESS) {
+        BUG("Failed to create Win32 Vulkan surface.");
+        return VK_NULL_HANDLE;
+    }
+    return surface;
 }
 
+bool check_window_presentation_support(VkPhysicalDevice device, uint32_t queue_family_index, VkSurfaceKHR window_surface) {
+    ASSERT(device != VK_NULL_HANDLE, return false, "Physical device cannot be NULL");
+    ASSERT(window_surface != VK_NULL_HANDLE, return false, "Window surface cannot be NULL");
+    return vkGetPhysicalDeviceWin32PresentationSupportKHR(device, queue_family_index);
+}
+
+// ^^^ Vulkan API related functions that need to be implemented in the platform layer .c file. ^^^
 
 static LRESULT window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     window_internals* w = (window_internals*)GetWindowLongPtr(hwnd, GWLP_USERDATA);

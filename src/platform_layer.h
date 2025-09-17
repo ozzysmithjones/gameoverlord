@@ -105,7 +105,7 @@ Window stuff.
 
 typedef struct {
 #ifdef _WIN32
-    alignas(8) uint8_t internals[104];
+    alignas(8) uint8_t internals[200];
 #endif
 } window;
 

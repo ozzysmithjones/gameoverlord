@@ -1,21 +1,14 @@
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#endif
 #include <vulkan/vulkan.h>
-#ifdef _WIN32
-#include <vulkan/vulkan_win32.h>
-#endif
 #include "platform_layer.h"
-
+#include "renderer.h"
 
 // public interface (just copy this to the platform layer .c file)
 result create_renderer(window* window, renderer* out_renderer);
 void destroy_renderer(renderer* renderer);
 
-// Needs to be implemented in platform layer .c file.
-HWND get_window_handle(window* w);
+// These function needs to be implemented in the platform layer .c file.
+VkSurfaceKHR create_window_surface(VkInstance instance, window* window);
+bool check_window_presentation_support(VkPhysicalDevice device, uint32_t queue_family_index, VkSurfaceKHR window_surface);
 
 // Implementation details:
 
@@ -25,7 +18,7 @@ typedef struct {
     uint32_t transfer_family;
 } queue_family_indices;
 
-typedef struct renderer {
+typedef struct {
     VkInstance instance;
     VkSurfaceKHR window_surface;
     VkPhysicalDevice physical_device;
@@ -37,27 +30,7 @@ typedef struct renderer {
     VkFramebuffer framebuffer;
     VkCommandPool command_pool;
     VkCommandBuffer command_buffer;
-} renderer;
-
-static VkSurfaceKHR create_window_surface(VkInstance instance, window* w) {
-    ASSERT(instance != VK_NULL_HANDLE, return VK_NULL_HANDLE, "Vulkan instance cannot be NULL");
-    ASSERT(w != NULL, return VK_NULL_HANDLE, "Window pointer cannot be NULL");
-#ifdef _WIN32
-    VkWin32SurfaceCreateInfoKHR create_info = {
-        .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
-        .hinstance = GetModuleHandle(NULL),
-        .hwnd = get_window_handle(w),
-    };
-#else
-#error Unsupported platform for Vulkan, add the code to create a window surface here.
-#endif
-    VkSurfaceKHR surface;
-    if (vkCreateWin32SurfaceKHR(instance, &create_info, NULL, &surface) != VK_SUCCESS) {
-        BUG("Failed to create Win32 Vulkan surface.");
-        return VK_NULL_HANDLE;
-    }
-    return surface;
-}
+} renderer_internals;
 
 // Rate the physical device, score of 0 means the device is not suitable.
 static uint32_t rate_physical_device(VkPhysicalDevice device, VkSurfaceKHR window_surface, queue_family_indices* out_queue_families) {
@@ -92,7 +65,7 @@ static uint32_t rate_physical_device(VkPhysicalDevice device, VkSurfaceKHR windo
             found_graphics = true;
         }
 
-        if (vkGetPhysicalDeviceWin32PresentationSupportKHR(device, i)) {
+        if (check_window_presentation_support(device, i, window_surface)) {
             out_queue_families->present_family = i;
             found_present = true;
             if (out_queue_families->graphics_family == out_queue_families->present_family) {
@@ -129,7 +102,7 @@ static uint32_t rate_physical_device(VkPhysicalDevice device, VkSurfaceKHR windo
     return score;
 }
 
-static result select_physical_device(renderer* renderer, VkSurfaceKHR window_surface, VkPhysicalDevice* out_physical_device, queue_family_indices* out_queue_families) {
+static result select_physical_device(renderer_internals* renderer, VkSurfaceKHR window_surface, VkPhysicalDevice* out_physical_device, queue_family_indices* out_queue_families) {
     ASSERT(renderer != NULL, return RESULT_FAILURE, "Renderer pointer cannot be NULL");
     ASSERT(window_surface != VK_NULL_HANDLE, return RESULT_FAILURE, "Window surface cannot be NULL");
     ASSERT(out_physical_device != NULL, return RESULT_FAILURE, "Output physical device pointer cannot be NULL");
@@ -160,10 +133,14 @@ static result select_physical_device(renderer* renderer, VkSurfaceKHR window_sur
     return RESULT_SUCCESS;
 }
 
+STATIC_ASSERT(sizeof(renderer) == sizeof(renderer_internals), renderer_struct_too_small);
+STATIC_ASSERT(alignof(renderer) >= alignof(renderer_internals), renderer_struct_misaligned);
+
 result create_renderer(window* window, renderer* out_renderer) {
     ASSERT(window != NULL, return RESULT_FAILURE, "Window pointer cannot be NULL");
     ASSERT(out_renderer != NULL, return RESULT_FAILURE, "Output renderer pointer cannot be NULL");
     memset(out_renderer, 0, sizeof(*out_renderer));
+    renderer_internals* r = (renderer_internals*)&out_renderer->internals;
 
     // Create the Vulkan instance
     VkApplicationInfo app_info = {
@@ -201,18 +178,18 @@ result create_renderer(window* window, renderer* out_renderer) {
         .ppEnabledLayerNames = layers,
     };
 
-    if (vkCreateInstance(&create_info, NULL, &out_renderer->instance) != VK_SUCCESS) {
+    if (vkCreateInstance(&create_info, NULL, &r->instance) != VK_SUCCESS) {
         BUG("Failed to create Vulkan instance.");
         return RESULT_FAILURE;
     }
 
-    out_renderer->window_surface = create_window_surface(out_renderer->instance, window);
-    if (out_renderer->window_surface == VK_NULL_HANDLE) {
+    r->window_surface = create_window_surface(r->instance, window);
+    if (r->window_surface == VK_NULL_HANDLE) {
         BUG("Failed to create window surface.");
         return RESULT_FAILURE;
     }
 
-    if (select_physical_device(out_renderer, out_renderer->window_surface, &out_renderer->physical_device, &out_renderer->queue_family_indices) != RESULT_SUCCESS) {
+    if (select_physical_device(r, r->window_surface, &r->physical_device, &r->queue_family_indices) != RESULT_SUCCESS) {
         BUG("Failed to select a suitable physical device.");
         return RESULT_FAILURE;
     }
@@ -222,8 +199,9 @@ result create_renderer(window* window, renderer* out_renderer) {
 
 void destroy_renderer(renderer* renderer) {
     ASSERT(renderer != NULL, return, "Renderer pointer cannot be NULL");
-    vkDestroySurfaceKHR(renderer->instance, renderer->window_surface, NULL);
-    vkDestroyInstance(renderer->instance, NULL);
+    renderer_internals* r = (renderer_internals*)&renderer->internals;
+    vkDestroySurfaceKHR(r->instance, r->window_surface, NULL);
+    vkDestroyInstance(r->instance, NULL);
     memset(renderer, 0, sizeof(*renderer));
 }
 
