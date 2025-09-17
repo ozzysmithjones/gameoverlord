@@ -6,7 +6,6 @@
 
 #include "fundamental.h"
 
-
 #ifdef VULKAN
 #include <vulkan/vulkan.h>
 #endif

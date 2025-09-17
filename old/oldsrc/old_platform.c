@@ -1,4 +1,4 @@
-#include "platform.h"
+#include "old_platform.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -9,6 +9,7 @@
 #include <pthread.h>
 #endif
 #include <stdio.h>
+#include "platform_layer.h"
 
 #ifdef _WIN32
 
@@ -307,7 +308,6 @@ void update_window_input(window* w) {
         }
     }
 }
-
 
 void resize_window(window* w, int width, int height, window_mode mode) {
     int screen_width = GetSystemMetrics(SM_CXSCREEN);

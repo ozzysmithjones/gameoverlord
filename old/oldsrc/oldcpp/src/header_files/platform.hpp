@@ -1,6 +1,4 @@
 #pragma once
-#include "fundamental.hpp"
-
 enum class key;
 
 #if defined(_WIN32)
@@ -116,34 +114,38 @@ enum class key {
 };
 #endif
 
-enum class program_expectation {
-    should_terminate,
-    should_continue,
+// This way is just more straightforward than using PIMPL or something similar.
+// I like that the function signatures kind of inform that the structs are allocated in static memory.
+// I'm forcing the user to pass the global variables around by reference, to make the dependencies between the functions explicit and more clear.
+// This is to avoid making the same mistake as OpenGL, which also uses global variables, but has a lot of implicit state being passed behind the scenes that is hard to track.
+// All values that the functions use are passed by argument explicitly (even if the arguments themselves are references to global variables).
+// This also makes it very easy to switch away from global state in the future, if needed.
+// The only reason we are using static memory for these structs is to avoid dynamic memory allocation.
+
+struct renderer;
+struct input;
+
+enum class window_mode {
+    windowed,
+    borderless_fullscreen,
+    fullscreen,
 };
 
-namespace platform {
-    struct window;
-    struct renderer;
-    struct input;
+#ifdef WIN32
+#define PLATFORM_WINDOW_ALIGNMENT alignof(std::max_align_t)
+#define PLATFORM_WINDOW_SIZE_BYTES 872
+#else
+#error "Platform not supported"
+#endif
 
-    [[nodiscard]] window& init();
-    void cleanup(window& window);
-    [[nodiscard]] input& update_input(window& window);
+result create_window(string_slice title, int width, int height, window_mode mode);
 
-    // if the key is currently pressed, can be pressed for multiple frames
-    bool is_key_pressed(const input& input, key k);
+[[nodiscard]] input& update_input(window& window);
+bool key_is_held_down(const input& input, key k);
+bool key_is_not_held_down(const input& input, key k);
+bool key_is_pressed_this_frame(const input& input, key k);
+bool key_is_released_this_frame(const input& input, key k);
+bool quit_is_requested(const input& input);
 
-    // if the key is currently released, can be released for multiple frames
-    bool is_key_released(const input& input, key k);
-
-    // If the key was just pressed this frame (not held)
-    bool is_key_just_pressed(const input& input, key k);
-
-    // If the key was just released this frame (not held)
-    bool is_key_just_released(const input& input, key k);
-
-    bool is_quit_requested(const input& input);
-
-    [[nodiscard]] renderer& begin_drawing(window& window);
-    void end_drawing(renderer& renderer);
-}
+[[nodiscard]] renderer& begin_draw_commands(window& window);
+void submit_draw_commands(renderer& renderer);
