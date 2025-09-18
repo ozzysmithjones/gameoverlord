@@ -24,6 +24,7 @@ Memory allocation stuff.
 
 */
 
+
 typedef struct {
     void* base;
     size_t next_page_bytes;
@@ -41,6 +42,16 @@ void* bump_allocate(bump_allocator* allocator, size_t alignment, size_t bytes);
 static inline void reset_bump_allocator(bump_allocator* allocator) {
     allocator->used_bytes = 0;
 }
+
+/*
+
+File handling stuff.
+
+*/
+
+bool file_exists(string path);
+result read_entire_file(string path, bump_allocator* allocator, string* out_file_contents);
+result write_entire_file(string path, const void* data, size_t size);
 
 /*
 
@@ -89,7 +100,7 @@ Window stuff.
 
 typedef struct {
 #ifdef _WIN32
-    alignas(8) uint8_t internals[248];
+    alignas(8) uint8_t internals[264];
 #endif
 } window;
 

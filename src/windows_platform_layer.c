@@ -100,6 +100,68 @@ void* bump_allocate(bump_allocator* allocator, size_t alignment, size_t bytes) {
     return (LPBYTE)allocator->base + aligned;
 }
 
+bool file_exists(string path) {
+    DWORD file_attributes = GetFileAttributesA(path.text);
+    return (file_attributes != INVALID_FILE_ATTRIBUTES);
+}
+
+result read_entire_file(string path, bump_allocator* allocator, string* out_file_contents) {
+    ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
+    ASSERT(out_file_contents != NULL, return RESULT_FAILURE, "Output file contents cannot be NULL");
+
+    HANDLE file_handle = CreateFileA(path.text, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file_handle == INVALID_HANDLE_VALUE) {
+        BUG("Failed to open file for reading: %.*s", path.length, path.text);
+        return RESULT_FAILURE;
+    }
+    LARGE_INTEGER file_size;
+    if (!GetFileSizeEx(file_handle, &file_size)) {
+        BUG("Failed to get file size for reading: %.*s", path.length, path.text);
+        CloseHandle(file_handle);
+        return RESULT_FAILURE;
+    }
+    if (file_size.QuadPart > UINT32_MAX) {
+        BUG("File too large to read into memory: %.*s", path.length, path.text);
+        CloseHandle(file_handle);
+        return RESULT_FAILURE;
+    }
+    void* buffer = bump_allocate(allocator, 1, (size_t)file_size.QuadPart);
+    if (buffer == NULL) {
+        BUG("Failed to allocate memory for reading file: %.*s", path.length, path.text);
+        CloseHandle(file_handle);
+        return RESULT_FAILURE;
+    }
+    DWORD bytes_read;
+    if (!ReadFile(file_handle, buffer, (DWORD)file_size.QuadPart, &bytes_read, NULL) || bytes_read != (DWORD)file_size.QuadPart) {
+        BUG("Failed to read file: %.*s", path.length, path.text);
+        CloseHandle(file_handle);
+        return RESULT_FAILURE;
+    }
+    CloseHandle(file_handle);
+    out_file_contents->text = (const char*)buffer;
+    out_file_contents->length = (uint32_t)file_size.QuadPart;
+    return RESULT_SUCCESS;
+}
+
+result write_entire_file(string path, const void* data, size_t size) {
+    ASSERT(data != NULL, return RESULT_FAILURE, "Data pointer cannot be NULL");
+    ASSERT(size > 0, return RESULT_FAILURE, "Size must be greater than zero");
+
+    HANDLE file_handle = CreateFileA(path.text, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file_handle == INVALID_HANDLE_VALUE) {
+        BUG("Failed to open file for writing: %.*s", path.length, path.text);
+        return RESULT_FAILURE;
+    }
+    DWORD bytes_written;
+    if (!WriteFile(file_handle, data, (DWORD)size, &bytes_written, NULL) || bytes_written != (DWORD)size) {
+        BUG("Failed to write file: %.*s", path.length, path.text);
+        CloseHandle(file_handle);
+        return RESULT_FAILURE;
+    }
+    CloseHandle(file_handle);
+    return RESULT_SUCCESS;
+}
+
 typedef struct input {
     uint64_t keys_pressed_bitset[4];
     uint64_t keys_modified_this_frame_bitset[4];
@@ -263,8 +325,7 @@ result create_window(window* window, const char* title, uint32_t width, uint32_t
 
     if (!create_renderer(window, &w->renderer)) {
         BUG("Failed to create renderer for window.");
-        DestroyWindow(w->handle);
-        memset(w, 0, sizeof(*w));
+        destroy_window(window);
         return RESULT_FAILURE;
     }
 
