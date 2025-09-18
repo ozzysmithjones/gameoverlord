@@ -6,25 +6,15 @@
 #include "fundamental.h"
 #include "geometry.h"
 
-/*
-
-Platform layer initialization and shutdown functions.
-Note that some platforms might require an initialization step before using any other platform functions.
-For example on windows, the native page size is queried during initialization and stored for later use in memory allocation functions.
-
-*/
 
 typedef struct {
-    size_t min_temp_allocator_size;
-    size_t recommended_temp_allocator_size;
-    size_t min_permanent_allocator_size;
-    size_t recommended_permanent_allocator_size;
+    size_t temp_allocator_capacity;
+    size_t permanent_allocator_capacity;
 } memory_requirements;
 
-
-// Create the platform layer, including global allocators. Global allocators will reserve at least the minimum sizes specified in the memory requirements struct. 
-// If you pass NULL, the default values will be used. By default, the temporary allocator will reserve 16 MB minimum and 64 MB recommended, and the permanent allocator will reserve 16 MB minimum and as much as possible recommended.
-// You can set the recommended sizes to SIZE_MAX in the memory requirements to reserve as much memory as possible (up to the limits of the OS).
+/// @brief Create the platform layer, including global allocators. If memory requirements is NULL, default requirements will be used. By default, the temporary allocator will be 64 MB and the permanent allocator will be 1 gigabyte.
+/// @param requirements Pointer to the memory requirements structure.
+/// @return RESULT_SUCCESS on success, RESULT_FAILURE on failure.
 result create_platform_layer(memory_requirements* requirements);
 void destroy_platform_layer(void);
 
@@ -44,13 +34,7 @@ typedef struct {
 extern bump_allocator permanent_allocator; // A global permanent allocator for any allocation that should live for the entire program lifetime.
 extern bump_allocator temp_allocator; // A global temporary allocator for short lived allocations. You should reset this allocator regularly to avoid running out of memory (like the end of each frame).
 
-/// @brief Create a bump allocator with at least min_capacity bytes and at most max_capacity bytes. It will prioritize reserving as close to max_capacity as possible.
-/// Anything below min_capacity will result in failure.
-/// @param allocator Pointer to the bump allocator to create.
-/// @param min_capacity Minimum capacity of the allocator.
-/// @param max_capacity Maximum capacity of the allocator.
-/// @return RESULT_SUCCESS on success, RESULT_FAILURE on failure.
-result create_bump_allocator(bump_allocator* allocator, size_t min_capacity, size_t max_capacity);
+result create_bump_allocator(bump_allocator* allocator, size_t capacity);
 void destroy_bump_allocator(bump_allocator* allocator);
 void* bump_allocate(bump_allocator* allocator, size_t alignment, size_t bytes);
 
@@ -105,7 +89,7 @@ Window stuff.
 
 typedef struct {
 #ifdef _WIN32
-    alignas(8) uint8_t internals[200];
+    alignas(8) uint8_t internals[248];
 #endif
 } window;
 
@@ -115,7 +99,13 @@ typedef enum {
     WINDOW_MODE_BORDERLESS_FULLSCREEN
 } window_mode;
 
+typedef struct {
+    uint32_t width;
+    uint32_t height;
+} window_size;
+
 result create_window(window* w, const char* title, uint32_t width, uint32_t height, window_mode mode);
+window_size get_window_size(window* w);
 void destroy_window(window* w);
 
 /*

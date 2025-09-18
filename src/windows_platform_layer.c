@@ -21,22 +21,20 @@ result create_platform_layer(memory_requirements* requirements) {
     GetSystemInfo(&native_memory_info);
 
     memory_requirements default_requirements = {
-        .min_temp_allocator_size = 16 * 1024 * 1024,
-        .recommended_temp_allocator_size = 64 * 1024 * 1024,
-        .min_permanent_allocator_size = 16 * 1024 * 1024,
-        .recommended_permanent_allocator_size = SIZE_MAX
+        .permanent_allocator_capacity = 1024 * 1024 * 1024, // 1 GB
+        .temp_allocator_capacity = 64 * 1024 * 1024         // 64 MB
     };
 
     if (requirements == NULL) {
         requirements = &default_requirements;
     }
 
-    if (create_bump_allocator(&temp_allocator, requirements->min_temp_allocator_size, requirements->recommended_temp_allocator_size) != RESULT_SUCCESS) {
+    if (create_bump_allocator(&temp_allocator, requirements->temp_allocator_capacity) != RESULT_SUCCESS) {
         BUG("Failed to create temporary allocator, probably not enough virtual memory available.");
         return RESULT_FAILURE;
     }
 
-    if (create_bump_allocator(&permanent_allocator, requirements->min_permanent_allocator_size, requirements->recommended_permanent_allocator_size) != RESULT_SUCCESS) {
+    if (create_bump_allocator(&permanent_allocator, requirements->permanent_allocator_capacity) != RESULT_SUCCESS) {
         BUG("Failed to create permanent allocator, probably not enough remaining virtual memory available.");
         return RESULT_FAILURE;
     }
@@ -49,56 +47,20 @@ void destroy_platform_layer(void) {
     destroy_bump_allocator(&permanent_allocator);
 }
 
-result create_bump_allocator(bump_allocator* allocator, size_t min_capacity, size_t max_capacity) {
+result create_bump_allocator(bump_allocator* allocator, size_t capacity) {
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
     ASSERT(memcmp(&native_memory_info, &(SYSTEM_INFO) {
         0
     }, sizeof(native_memory_info)) != 0, return RESULT_FAILURE, "Native memory info struct should not be zero (maybe you forgot to call create_platform_layer?).");
 
-    MEMORY_BASIC_INFORMATION mbi;
-    SIZE_T largest_space = 0;
-    LPVOID address = native_memory_info.lpMinimumApplicationAddress;
-    LPVOID allocator_base_address = NULL;
 
-    while (address < native_memory_info.lpMaximumApplicationAddress) {
-        if (VirtualQuery(address, &mbi, sizeof(mbi)) == sizeof(mbi)) {
-            if (mbi.State == MEM_FREE) {
-                if (mbi.RegionSize > largest_space) {
-                    largest_space = mbi.RegionSize;
-                    allocator_base_address = mbi.BaseAddress;
-
-                    if (largest_space >= max_capacity) {
-                        // Found a big enough space, no need to look further.
-                        break;
-                    }
-                }
-            }
-            address = (LPBYTE)address + mbi.RegionSize;
-        }
-        else {
-            break;
-        }
-    }
-
-    allocator_base_address = (LPVOID)(((uintptr_t)allocator_base_address + (native_memory_info.dwAllocationGranularity - 1)) & ~(native_memory_info.dwAllocationGranularity - 1)); // Align to allocation granularity.
-    largest_space -= (uintptr_t)allocator_base_address - (uintptr_t)mbi.BaseAddress;
-
-    if (largest_space < min_capacity) {
-        BUG("Not enough virtual memory available to reserve space for bump allocator.");
-        return RESULT_FAILURE;
-    }
-
-    if (largest_space > max_capacity) {
-        largest_space = max_capacity;
-    }
-
-    allocator->base = VirtualAlloc(allocator_base_address, largest_space, MEM_RESERVE, PAGE_READWRITE);
+    allocator->base = VirtualAlloc(NULL, capacity, MEM_RESERVE, PAGE_READWRITE);
     allocator->used_bytes = 0;
     allocator->next_page_bytes = 0;
-    allocator->capacity = largest_space;
+    allocator->capacity = capacity;
 
     if (!allocator->base) {
-        BUG("Failed to reserve virtual memory for bump allocator.");
+        BUG("Failed to reserve virtual memory for bump allocator. Error: %d", GetLastError());
         return RESULT_FAILURE;
     }
 
@@ -149,8 +111,6 @@ typedef struct input {
 typedef struct {
     HWND handle;
     HDC hdc;
-    uint32_t width;
-    uint32_t height;
     input input_state;
     renderer renderer;
 } window_internals;
@@ -301,18 +261,41 @@ result create_window(window* window, const char* title, uint32_t width, uint32_t
     ShowWindow((HWND)w->handle, SW_SHOW);
     UpdateWindow((HWND)w->handle);
 
+    if (!create_renderer(window, &w->renderer)) {
+        BUG("Failed to create renderer for window.");
+        DestroyWindow(w->handle);
+        memset(w, 0, sizeof(*w));
+        return RESULT_FAILURE;
+    }
+
     return RESULT_SUCCESS;
 }
 
-input* update_window_input(window* w) {
-    ASSERT(w != NULL, return NULL, "Window pointer cannot be NULL");
-    window_internals* win = (window_internals*)&w->internals;
-    input* input_state = &win->input_state;
+window_size get_window_size(window* window) {
+    ASSERT(window != NULL, return (window_size){0}, "Window pointer cannot be NULL");
+    window_internals* w = (window_internals*)&window->internals;
+    ASSERT(w->handle != NULL, return (window_size){0}, "Window handle cannot be NULL");
+    RECT rect;
+    if (GetClientRect(w->handle, &rect)) {
+        return (window_size) {
+            rect.right - rect.left, rect.bottom - rect.top
+        };
+    }
+    BUG("Failed to get window size.");
+    return (window_size) {
+        0
+    };
+}
+
+input* update_window_input(window* window) {
+    ASSERT(window != NULL, return NULL, "Window pointer cannot be NULL");
+    window_internals* w = (window_internals*)&window->internals;
+    input* input_state = &w->input_state;
     memset(input_state->keys_modified_this_frame_bitset, 0, sizeof(input_state->keys_modified_this_frame_bitset));
 
     // Poll for events
     MSG msg;
-    while (PeekMessage(&msg, win->handle, 0, 0, PM_REMOVE)) {
+    while (PeekMessage(&msg, w->handle, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
@@ -323,6 +306,7 @@ input* update_window_input(window* w) {
 void destroy_window(window* window) {
     ASSERT(window != NULL, return, "Window pointer cannot be NULL");
     window_internals* w = (window_internals*)&window->internals;
+    destroy_renderer(&w->renderer);
     DestroyWindow(w->handle);
     memset(w, 0, sizeof(*w));
 }

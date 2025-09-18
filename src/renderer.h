@@ -4,7 +4,7 @@
 #include "platform_layer.h"
 
 typedef struct renderer {
-    alignas(8) uint8_t internals[96];
+    alignas(8) uint8_t internals[152];
 } renderer;
 
 result create_renderer(window* window, renderer* out_renderer);

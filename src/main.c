@@ -24,7 +24,8 @@ int main(void) {
         if (is_key_down(input_state, KEY_SPACE)) {
             printf("Space key pressed!\n");
         }
-        
+
+        reset_bump_allocator(&temp_allocator);
     }
 
     destroy_window(&w);
