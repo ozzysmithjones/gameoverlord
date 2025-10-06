@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-
 int main(int argc, char** argv) {
     if (argc != 3) {
         fprintf(stderr, "Usage: %s <input_file> <output_c_file>\n", argv[0]);

@@ -53,6 +53,18 @@
         "xtr1common": "cpp",
         "vulkan.h": "c",
         "platform_layer.h": "c",
-        "minwindef.h": "c"
+        "minwindef.h": "c",
+        "array": "c",
+        "sstream": "c",
+        "xtree": "c",
+        "algorithm": "cpp",
+        "expected": "cpp",
+        "ios": "cpp",
+        "istream": "cpp",
+        "map": "cpp",
+        "optional": "cpp",
+        "set": "cpp",
+        "span": "cpp",
+        "string": "cpp"
     }
 }

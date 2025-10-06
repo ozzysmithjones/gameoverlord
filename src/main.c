@@ -3,13 +3,22 @@
 #include "platform_layer.h"
 
 int main(void) {
-    create_platform_layer(NULL);
+    if (create_platform_layer(NULL) != RESULT_SUCCESS) {
+        fprintf(stderr, "Failed to create platform layer.\n");
+        return -1;
+    }
 
-    window w;
+    window w = { 0 };
+    sprite_renderer r = { 0 };
     if (create_window(&w, "Game Overlord", 800, 600, WINDOW_MODE_WINDOWED) != RESULT_SUCCESS) {
         fprintf(stderr, "Failed to create window.\n");
-        destroy_platform_layer();
-        return -1;
+        goto cleanup;
+    }
+
+    texture text = { 0 };
+    if (create_sprite_renderer(&w, &r, text) != RESULT_SUCCESS) {
+        fprintf(stderr, "Failed to create renderer.\n");
+        goto cleanup;
     }
 
     while (1) {
@@ -28,6 +37,8 @@ int main(void) {
         reset_bump_allocator(&temp_allocator);
     }
 
+cleanup:
+    destroy_sprite_renderer(&r);
     destroy_window(&w);
     destroy_platform_layer();
     return 0;

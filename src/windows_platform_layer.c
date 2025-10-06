@@ -7,7 +7,6 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_win32.h>
 
-#include "renderer.h"
 #include "platform_layer.h"
 
 bump_allocator permanent_allocator;
@@ -52,7 +51,6 @@ result create_bump_allocator(bump_allocator* allocator, size_t capacity) {
     ASSERT(memcmp(&native_memory_info, &(SYSTEM_INFO) {
         0
     }, sizeof(native_memory_info)) != 0, return RESULT_FAILURE, "Native memory info struct should not be zero (maybe you forgot to call create_platform_layer?).");
-
 
     allocator->base = VirtualAlloc(NULL, capacity, MEM_RESERVE, PAGE_READWRITE);
     allocator->used_bytes = 0;
@@ -174,7 +172,6 @@ typedef struct {
     HWND handle;
     HDC hdc;
     input input_state;
-    renderer renderer;
 } window_internals;
 
 STATIC_ASSERT(sizeof(window) == sizeof(window_internals), window_struct_too_small);
@@ -322,20 +319,12 @@ result create_window(window* window, const char* title, uint32_t width, uint32_t
 
     ShowWindow((HWND)w->handle, SW_SHOW);
     UpdateWindow((HWND)w->handle);
-
-    if (!create_renderer(window, &w->renderer)) {
-        BUG("Failed to create renderer for window.");
-        destroy_window(window);
-        return RESULT_FAILURE;
-    }
-
     return RESULT_SUCCESS;
 }
 
 window_size get_window_size(window* window) {
     ASSERT(window != NULL, return (window_size){0}, "Window pointer cannot be NULL");
     window_internals* w = (window_internals*)&window->internals;
-    ASSERT(w->handle != NULL, return (window_size){0}, "Window handle cannot be NULL");
     RECT rect;
     if (GetClientRect(w->handle, &rect)) {
         return (window_size) {
@@ -367,7 +356,6 @@ input* update_window_input(window* window) {
 void destroy_window(window* window) {
     ASSERT(window != NULL, return, "Window pointer cannot be NULL");
     window_internals* w = (window_internals*)&window->internals;
-    destroy_renderer(&w->renderer);
     DestroyWindow(w->handle);
     memset(w, 0, sizeof(*w));
 }

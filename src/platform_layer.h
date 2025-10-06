@@ -24,7 +24,6 @@ Memory allocation stuff.
 
 */
 
-
 typedef struct {
     void* base;
     size_t next_page_bytes;
@@ -100,7 +99,7 @@ Window stuff.
 
 typedef struct {
 #ifdef _WIN32
-    alignas(8) uint8_t internals[264];
+    alignas(8) uint8_t internals[96];
 #endif
 } window;
 
@@ -118,6 +117,30 @@ typedef struct {
 result create_window(window* w, const char* title, uint32_t width, uint32_t height, window_mode mode);
 window_size get_window_size(window* w);
 void destroy_window(window* w);
+
+typedef struct {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
+} pixel;
+
+// Note that textures are expected to be in R8G8B8A8_SRGB format.
+typedef struct {
+    pixel* pixels;
+    uint32_t width;
+    uint32_t height;
+} texture;
+
+#define MAX_TEXTURES 16
+DECLARE_CAPPED_ARRAY(textures, texture, MAX_TEXTURES)
+
+typedef struct sprite_renderer {
+    alignas(8) uint8_t internals[288];
+} sprite_renderer;
+
+result create_sprite_renderer(window* window, sprite_renderer* out_renderer, texture sprite_sheet);
+void destroy_sprite_renderer(sprite_renderer* sprite_renderer);
 
 /*
 
@@ -255,9 +278,9 @@ Graphics stuff.
 
 */
 
-typedef struct renderer renderer;
+typedef struct sprite_renderer sprite_renderer;
 
-renderer* begin_draw_commands(window* w);
-void present_draw_commands(renderer* r);
+sprite_renderer* begin_draw_commands(window* w);
+void present_draw_commands(sprite_renderer* r);
 
 #endif // PLATFORM_LAYER_H

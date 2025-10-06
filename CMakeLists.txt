@@ -10,9 +10,9 @@ file(GLOB_RECURSE SOURCES
 "src/*.h"
 )
 
+
 # Update executable with source files
 add_executable(gameoverlord ${SOURCES})
-
 
 # Find Vulkan package
 find_package(Vulkan REQUIRED)
