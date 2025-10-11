@@ -1378,6 +1378,54 @@ cleanup:
     return result;
 }
 
+static result create_frame_executions(vulkan_device* device, VkCommandPool command_pool, uint32_t frame_count, vulkan_frame_execution* out_frame_executions) {
+    ASSERT(device != NULL, return RESULT_FAILURE, "Device pointer cannot be NULL");
+    ASSERT(device->handle != VK_NULL_HANDLE, return RESULT_FAILURE, "Device handle cannot be NULL");
+    ASSERT(command_pool != VK_NULL_HANDLE, return RESULT_FAILURE, "Command pool handle cannot be NULL");
+    ASSERT(frame_count > 0, return RESULT_FAILURE, "Frame count must be greater than zero");
+    ASSERT(out_frame_executions != NULL, return RESULT_FAILURE, "Output frame executions pointer cannot be NULL");
+
+    for (uint32_t i = 0; i < frame_count; ++i) {
+        if (create_command_pool(device->handle, device->queue_family_indices.graphics_family], COMMAND_POOL_BUFFERS_RESETABLE, &out_frame_executions[i].command_pool) != RESULT_SUCCESS) {
+            BUG("Failed to create command pool for frame execution.");
+            return RESULT_FAILURE;
+        }
+
+        if (create_command_buffers(device->handle, command_pool, COMMAND_BUFFER_PRIMARY, 1, &out_frame_executions[i].command_buffer) != RESULT_SUCCESS) {
+            BUG("Failed to create command buffer for frame execution.");
+            return RESULT_FAILURE;
+        }
+
+        // Semaphores are used to implement task precedence on the GPU, such as A must occur before B, which must occur before C.
+        VkSemaphoreCreateInfo semaphore_info = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        };
+
+        if (vkCreateSemaphore(device->handle, &semaphore_info, NULL, &out_frame_executions[i].image_available_semaphore) != VK_SUCCESS) {
+            BUG("Failed to create image available semaphore for frame execution.");
+            return RESULT_FAILURE;
+        }
+
+        if (vkCreateSemaphore(device->handle, &semaphore_info, NULL, &out_frame_executions[i].render_finished_semaphore) != VK_SUCCESS) {
+            BUG("Failed to create render finished semaphore for frame execution.");
+            return RESULT_FAILURE;
+        }
+
+        // Fences are used to block the CPU while we wait for tasks on the GPU to finish. 
+        VkFenceCreateInfo fence_info = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+        };
+        if (vkCreateFence(device->handle, &fence_info, NULL, &out_frame_executions[i].in_flight_fence) != VK_SUCCESS) {
+            BUG("Failed to create in-flight fence for frame execution.");
+            return RESULT_FAILURE;
+        }
+    }
+
+    return RESULT_SUCCESS;
+}
+
+
 STATIC_ASSERT(sizeof(sprite_renderer) == sizeof(sprite_renderer_internals), renderer_struct_too_small);
 STATIC_ASSERT(alignof(sprite_renderer) >= alignof(sprite_renderer_internals), renderer_struct_misaligned);
 
@@ -1465,7 +1513,10 @@ result create_sprite_renderer(window* window, sprite_renderer* out_renderer, tex
         return RESULT_FAILURE;
     }
 
-    
+    if (create_frame_executions(&r->device, r->graphics_command_pool, r->swapchain.image_count, r->frame_executions) != RESULT_SUCCESS) {
+        BUG("Failed to create frame executions.");
+        return RESULT_FAILURE;
+    }
 
     return RESULT_SUCCESS;
 }
@@ -1474,6 +1525,13 @@ void destroy_sprite_renderer(sprite_renderer* renderer) {
     ASSERT(renderer != NULL, return, "Renderer pointer cannot be NULL");
     sprite_renderer_internals* r = (sprite_renderer_internals*)&renderer->internals;
 
+    for (uint32_t i = 0; i < r->swapchain.image_count; ++i) {
+        vkDestroyFence(r->device.handle, r->frame_executions[i].in_flight_fence, NULL);
+        vkDestroySemaphore(r->device.handle, r->frame_executions[i].render_finished_semaphore, NULL);
+        vkDestroySemaphore(r->device.handle, r->frame_executions[i].image_available_semaphore, NULL);
+    }
+
+    vkDestroyCommandPool(r->device.handle, r->graphics_command_pool, NULL);
     vkDestroyImage(r->device.handle, r->sprite_sheet_image, NULL);
     vkFreeMemory(r->device.handle, r->sprite_sheet_memory, NULL);
 

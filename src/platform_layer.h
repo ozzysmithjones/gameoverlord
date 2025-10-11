@@ -7,16 +7,13 @@
 #include "geometry.h"
 
 
-typedef struct {
-    size_t temp_allocator_capacity;
-    size_t permanent_allocator_capacity;
-} memory_requirements;
+typedef struct input input;
+typedef struct graphics graphics;
+typedef struct audio audio;
 
-/// @brief Create the platform layer, including global allocators. If memory requirements is NULL, default requirements will be used. By default, the temporary allocator will be 64 MB and the permanent allocator will be 1 gigabyte.
-/// @param requirements Pointer to the memory requirements structure.
-/// @return RESULT_SUCCESS on success, RESULT_FAILURE on failure.
-result create_platform_layer(memory_requirements* requirements);
-void destroy_platform_layer(void);
+// These functions are expected to be 
+
+
 
 /*
 
@@ -31,9 +28,6 @@ typedef struct {
     size_t capacity;
 } bump_allocator;
 
-extern bump_allocator permanent_allocator; // A global permanent allocator for any allocation that should live for the entire program lifetime.
-extern bump_allocator temp_allocator; // A global temporary allocator for short lived allocations. You should reset this allocator regularly to avoid running out of memory (like the end of each frame).
-
 result create_bump_allocator(bump_allocator* allocator, size_t capacity);
 void destroy_bump_allocator(bump_allocator* allocator);
 void* bump_allocate(bump_allocator* allocator, size_t alignment, size_t bytes);
@@ -42,111 +36,31 @@ static inline void reset_bump_allocator(bump_allocator* allocator) {
     allocator->used_bytes = 0;
 }
 
-/*
+typedef struct {
+    bump_allocator temp_allocator;
+    bump_allocator permanent_allocator;
+} memory_allocators;
 
-File handling stuff.
-
-*/
-
-bool file_exists(string path);
-result read_entire_file(string path, bump_allocator* allocator, string* out_file_contents);
-result write_entire_file(string path, const void* data, size_t size);
 
 /*
-
-Multithreading stuff.
-
+Time stuff.
 */
 
 typedef struct {
-#ifdef _WIN32
-    alignas(8) uint8_t internals[40];
-#else
-#error Unsupported platform for mutex structure
-#endif
-} mutex;
+    float frequency;
+    float time_since_previous_update;
+    float creation_time;
+    float time_since_creation;
+} clock;
 
-typedef struct {
-#ifdef _WIN32
-    alignas(8) uint8_t internals[8];
-#else
-#error Unsupported platform for thread structure
-#endif
-} thread;
+result create_clock(clock* clock);
+void update_clock(clock* clock);
 
-typedef struct {
-    alignas(8) uint8_t internals[8];
-} condition_variable;
-
-void create_mutex(mutex* m);
-void lock_mutex(mutex* m);
-void unlock_mutex(mutex* m);
-void destroy_mutex(mutex* m);
-
-result create_thread(thread* t, unsigned long (*start_routine)(void*), void* arg);
-void join_thread(thread* t);
-void destroy_thread(thread* t);
-
-void init_condition_variable(condition_variable* cv);
-void signal_condition_variable(condition_variable* cv);
-void wait_condition_variable(condition_variable* cv, mutex* m);
 
 /*
-
-Window stuff.
-
-*/
-
-typedef struct {
-#ifdef _WIN32
-    alignas(8) uint8_t internals[96];
-#endif
-} window;
-
-typedef enum {
-    WINDOW_MODE_WINDOWED,
-    WINDOW_MODE_FULLSCREEN,
-    WINDOW_MODE_BORDERLESS_FULLSCREEN
-} window_mode;
-
-typedef struct {
-    uint32_t width;
-    uint32_t height;
-} window_size;
-
-result create_window(window* w, const char* title, uint32_t width, uint32_t height, window_mode mode);
-window_size get_window_size(window* w);
-void destroy_window(window* w);
-
-typedef struct {
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-    uint8_t a;
-} pixel;
-
-// Note that textures are expected to be in R8G8B8A8_SRGB format.
-typedef struct {
-    pixel* pixels;
-    uint32_t width;
-    uint32_t height;
-} texture;
-
-#define MAX_TEXTURES 16
-DECLARE_CAPPED_ARRAY(textures, texture, MAX_TEXTURES)
-
-typedef struct sprite_renderer {
-    alignas(8) uint8_t internals[288];
-} sprite_renderer;
-
-result create_sprite_renderer(window* window, sprite_renderer* out_renderer, texture sprite_sheet);
-void destroy_sprite_renderer(sprite_renderer* sprite_renderer);
-
-/*
-
 User input stuff.
-
 */
+
 typedef enum {
     KEY_NONE,
     KEY_BACKSPACE = 8,
@@ -266,21 +180,113 @@ typedef enum {
 
 typedef struct input input;
 
-input* update_window_input(window* w);
-bool is_window_closed(input* input_state);
 bool is_key_down(input* input_state, keyboard_key key);
 bool is_key_held_down(input* input_state, keyboard_key key);
 bool is_key_up(input* input_state, keyboard_key key);
 
 /*
 
-Graphics stuff.
+File handling stuff.
 
 */
 
-typedef struct sprite_renderer sprite_renderer;
+bool file_exists(string path);
+result read_entire_file(string path, bump_allocator* allocator, string* out_file_contents);
+result write_entire_file(string path, const void* data, size_t size);
 
-sprite_renderer* begin_draw_commands(window* w);
-void present_draw_commands(sprite_renderer* r);
+/*
 
+Multithreading stuff.
+
+*/
+
+typedef union {
+#ifdef _WIN32
+    uint64_t alignment_dummy;
+    uint8_t internals[40];
+#else
+#error Unsupported platform for mutex structure
+#endif
+} mutex;
+
+typedef union {
+#ifdef _WIN32
+    uint64_t alignment_dummy;
+    uint8_t internals[8];
+#else
+#error Unsupported platform for thread structure
+#endif
+} thread;
+
+typedef union {
+    uint64_t alignment_dummy;
+    uint8_t internals[8];
+} condition_variable;
+
+void create_mutex(mutex* m);
+void lock_mutex(mutex* m);
+void unlock_mutex(mutex* m);
+void destroy_mutex(mutex* m);
+
+result create_thread(thread* t, unsigned long (*start_routine)(void*), void* arg);
+void join_thread(thread* t);
+void destroy_thread(thread* t);
+
+void init_condition_variable(condition_variable* cv);
+void signal_condition_variable(condition_variable* cv);
+void wait_condition_variable(condition_variable* cv, mutex* m);
+
+typedef struct {
+    void* app_state;
+    memory_allocators* memory_allocators;
+    input* input;
+    graphics* graphics;
+    audio* audio;
+    clock clock;
+} update_params;
+
+typedef struct {
+    void* app_state;
+    memory_allocators* memory_allocators;
+} shutdown_params;
+
+typedef struct {
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+    uint8_t alpha;
+} color;
+
+typedef struct {
+    color* pixels;
+    int32_t width;
+    int32_t height;
+} texture;
+
+#ifndef MAX_TEXTURES
+#define MAX_TEXTURES 16
+#endif
+DECLARE_CAPPED_ARRAY(textures, texture, MAX_TEXTURES)
+typedef struct {
+    memory_allocators* memory_allocators;
+} init_in_params;
+
+typedef struct {
+    void* app_state;
+    textures textures;
+} init_out_params;
+
+#define APP_BACKEND
+#ifdef APP_BACKEND
+//#define HOT_RELOAD_HOST
+#ifdef HOT_RELOAD_HOST
+result(*init)(init_in_params* params, init_out_params* out_params);
+result(*update)(update_params* params);
+void (*shutdown)(shutdown_params* params);
+#else
+extern result init(init_in_params* in, init_out_params* out);
+extern result update(update_params* in);
+extern void shutdown(shutdown_params* in);
+#endif // HOT_RELOAD_HOST
+#endif // APP_BACKEND
 #endif // PLATFORM_LAYER_H

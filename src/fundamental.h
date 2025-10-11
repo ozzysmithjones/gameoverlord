@@ -45,10 +45,6 @@ typedef enum {
 } result;
 
 typedef struct {
-    uint8_t r, g, b, a;
-} color;
-
-typedef struct {
     const char* text;
     uint32_t length;
 } string;
@@ -186,51 +182,51 @@ static inline bool string_equal(string a, string b) {
         return RESULT_FAILURE; \
     }
 
-#define FOR_EACH_0(action)
-#define FOR_EACH_1(action, op0) action(op0)
-#define FOR_EACH_2(action, op0, op1) FOR_EACH_1(action, op0) action(op1)
-#define FOR_EACH_3(action, op0, op1, op2) FOR_EACH_2(action, op0, op1) action(op2)
-#define FOR_EACH_4(action, op0, op1, op2, op3) FOR_EACH_3(action, op0, op1, op2) action(op3)
-#define FOR_EACH_5(action, op0, op1, op2, op3, op4) FOR_EACH_4(action, op0, op1, op2, op3) action(op4)
-#define FOR_EACH_6(action, op0, op1, op2, op3, op4, op5) FOR_EACH_5(action, op0, op1, op2, op3, op4) action(op5)
-#define FOR_EACH_7(action, op0, op1, op2, op3, op4, op5, op6) FOR_EACH_6(action, op0, op1, op2, op3, op4, op5) action(op6)
-#define FOR_EACH_8(action, op0, op1, op2, op3, op4, op5, op6, op7) FOR_EACH_7(action, op0, op1, op2, op3, op4, op5, op6) action(op7)
-#define FOR_EACH_9(action, op0, op1, op2, op3, op4, op5, op6, op7, op8) FOR_EACH_8(action, op0, op1, op2, op3, op4, op5, op6, op7) action(op8)
-#define FOR_EACH_10(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9) FOR_EACH_9(action, op0, op1, op2, op3, op4, op5, op6, op7, op8) action(op9)
-#define FOR_EACH_11(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10) FOR_EACH_10(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9) action(op10)
-#define FOR_EACH_12(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11) FOR_EACH_11(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10) action(op11)
-#define FOR_EACH_13(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12) FOR_EACH_12(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11) action(op12)
-#define FOR_EACH_14(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13) FOR_EACH_13(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12) action(op13)
-#define FOR_EACH_15(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14) FOR_EACH_14(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13) action(op14)
-#define FOR_EACH_16(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15) FOR_EACH_15(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14) action(op15)
-#define FOR_EACH_17(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16) FOR_EACH_16(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15) action(op16)
-#define FOR_EACH_18(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17) FOR_EACH_17(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16) action(op17)
-#define FOR_EACH_19(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18) FOR_EACH_18(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17) action(op18)
-#define FOR_EACH_20(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19) FOR_EACH_19(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18) action(op19)
-#define FOR_EACH_21(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20) FOR_EACH_20(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19) action(op20)
-#define FOR_EACH_22(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21) FOR_EACH_21(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20) action(op21)
-#define FOR_EACH_23(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22) FOR_EACH_22(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21) action(op22)
-#define FOR_EACH_24(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23) FOR_EACH_23(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22) action(op23)
-#define FOR_EACH_25(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24) FOR_EACH_24(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23) action(op24)
-#define FOR_EACH_26(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25) FOR_EACH_25(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24) action(op25)
-#define FOR_EACH_27(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26) FOR_EACH_26(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25) action(op26)
-#define FOR_EACH_28(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27) FOR_EACH_27(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26) action(op27)
-#define FOR_EACH_29(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28) FOR_EACH_28(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27) action(op28)
-#define FOR_EACH_30(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29) FOR_EACH_29(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28) action(op29)
-#define FOR_EACH_31(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29, op30) FOR_EACH_30(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29) action(op30)
-#define FOR_EACH_32(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29, op30, op31) FOR_EACH_31(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29, op30) action(op31)
+#define MAP_0(action)
+#define MAP_1(action, op0) action(op0)
+#define MAP_2(action, op0, op1) MAP_1(action, op0) action(op1)
+#define MAP_3(action, op0, op1, op2) MAP_2(action, op0, op1) action(op2)
+#define MAP_4(action, op0, op1, op2, op3) MAP_3(action, op0, op1, op2) action(op3)
+#define MAP_5(action, op0, op1, op2, op3, op4) MAP_4(action, op0, op1, op2, op3) action(op4)
+#define MAP_6(action, op0, op1, op2, op3, op4, op5) MAP_5(action, op0, op1, op2, op3, op4) action(op5)
+#define MAP_7(action, op0, op1, op2, op3, op4, op5, op6) MAP_6(action, op0, op1, op2, op3, op4, op5) action(op6)
+#define MAP_8(action, op0, op1, op2, op3, op4, op5, op6, op7) MAP_7(action, op0, op1, op2, op3, op4, op5, op6) action(op7)
+#define MAP_9(action, op0, op1, op2, op3, op4, op5, op6, op7, op8) MAP_8(action, op0, op1, op2, op3, op4, op5, op6, op7) action(op8)
+#define MAP_10(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9) MAP_9(action, op0, op1, op2, op3, op4, op5, op6, op7, op8) action(op9)
+#define MAP_11(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10) MAP_10(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9) action(op10)
+#define MAP_12(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11) MAP_11(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10) action(op11)
+#define MAP_13(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12) MAP_12(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11) action(op12)
+#define MAP_14(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13) MAP_13(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12) action(op13)
+#define MAP_15(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14) MAP_14(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13) action(op14)
+#define MAP_16(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15) MAP_15(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14) action(op15)
+#define MAP_17(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16) MAP_16(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15) action(op16)
+#define MAP_18(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17) MAP_17(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16) action(op17)
+#define MAP_19(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18) MAP_18(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17) action(op18)
+#define MAP_20(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19) MAP_19(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18) action(op19)
+#define MAP_21(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20) MAP_20(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19) action(op20)
+#define MAP_22(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21) MAP_21(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20) action(op21)
+#define MAP_23(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22) MAP_22(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21) action(op22)
+#define MAP_24(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23) MAP_23(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22) action(op23)
+#define MAP_25(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24) MAP_24(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23) action(op24)
+#define MAP_26(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25) MAP_25(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24) action(op25)
+#define MAP_27(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26) MAP_26(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25) action(op26)
+#define MAP_28(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27) MAP_27(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26) action(op27)
+#define MAP_29(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28) MAP_28(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27) action(op28)
+#define MAP_30(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29) MAP_29(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28) action(op29)
+#define MAP_31(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29, op30) MAP_30(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29) action(op30)
+#define MAP_32(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29, op30, op31) MAP_31(action, op0, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, op12, op13, op14, op15, op16, op17, op18, op19, op20, op21, op22, op23, op24, op25, op26, op27, op28, op29, op30) action(op31)
 
 #define INTERNAL_GET_ARG_COUNT(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, N, ...) N
 
 #define GET_ARG_COUNT(...) INTERNAL_GET_ARG_COUNT(__VA_ARGS__, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, )
 
 #define CONCATENATE(a, b) a##b
-#define IMPL_SELECT_FOR_EACH(count) CONCATENATE(FOR_EACH_, count)
-#define FOR_EACH(action, ...) IMPL_SELECT_FOR_EACH(GET_ARG_COUNT(__VA_ARGS__))(action, __VA_ARGS__)
+#define IMPL_SELECT_MAP(count) CONCATENATE(MAP_, count)
+#define MAP(action, ...) IMPL_SELECT_MAP(GET_ARG_COUNT(__VA_ARGS__))(action, __VA_ARGS__)
 
 // generated code end
 
-// ENUM_WITH_TO_STRING macro, so you can declare an enum with string conversion (uses FOR_EACH macro)
+// ENUM_WITH_TO_STRING macro, so you can declare an enum with string conversion (uses MAP macro)
 
 #define STRINGIFY_ELEMENT(x) STRINGIFY(x),
 #define ENUM_WITH_TO_STRING(enum_name, ...) \
@@ -239,14 +235,13 @@ static inline bool string_equal(string a, string b) {
      enum_name##_count \
  } enum_name; \
  static const char* enum_name##_strings[enum_name##_count] = { \
-     FOR_EACH(STRINGIFY_ELEMENT, __VA_ARGS__) \
+     MAP(STRINGIFY_ELEMENT, __VA_ARGS__) \
  }; \
  static inline const char* enum_name##_to_string(enum_name value) { \
      if (value < 0 || value >= enum_name##_count) { \
          return "ENUM_UNKNOWN"; \
      } \
      return enum_name##_strings[value]; \
- }
 
 
 #endif // FUNDAMENTAL_H
