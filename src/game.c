@@ -2,17 +2,20 @@
 #include "geometry.h"
 #include "platform_layer.h"
 
-result init(init_in_params* in, init_out_params* out) {
+
+
+
+__declspec(dllexport) result init(init_in_params* in, init_out_params* out) {
     puts("Hello from platform layer init!");
     return RESULT_SUCCESS;
 }
 
-result update(update_params* in) {
+__declspec(dllexport) result update(update_params* in) {
     puts("Hello from platform layer update!");
     return RESULT_SUCCESS;
 }
 
-void shutdown(shutdown_params* in) {
+__declspec(dllexport) void shutdown(shutdown_params* in) {
     puts("Hello from platform layer shutdown!");
 }
 

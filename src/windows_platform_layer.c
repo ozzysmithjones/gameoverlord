@@ -2,12 +2,21 @@
 #define NOMINMAX
 #include <windows.h>
 #include <windowsx.h>
-
-/* Need relevant includes for creating a window surface for vulkan graphics API*/
-#include <vulkan/vulkan_core.h>
-#include <vulkan/vulkan_win32.h>
-
 #include "platform_layer.h"
+
+#define APP_BACKEND
+#ifdef APP_BACKEND
+#define HOT_RELOAD_HOST
+#ifdef HOT_RELOAD_HOST
+result(*init)(init_in_params* params, init_out_params* out_params);
+result(*update)(update_params* params);
+void (*shutdown)(shutdown_params* params);
+#else
+extern result init(init_in_params* in, init_out_params* out);
+extern result update(update_params* in);
+extern void shutdown(shutdown_params* in);
+#endif // HOT_RELOAD_HOST
+#endif // APP_BACKEND
 
 result create_bump_allocator(bump_allocator* allocator, size_t capacity) {
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
@@ -403,7 +412,7 @@ bool is_key_up(input* input_state, keyboard_key key) {
 
 #ifdef HOT_RELOAD_HOST
 #ifndef HOT_RELOAD_DLL_PATH
-#define HOT_RELOAD_DLL_PATH "gameoverlord_app.dll"
+#define HOT_RELOAD_DLL_PATH "game.dll"
 #define HOT_RELOAD_DLL_TEMP_PATH HOT_RELOAD_DLL_PATH ".temp"
 #endif
 
@@ -428,24 +437,12 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
         }
 
         edit_time = (((uint64_t)file_info.ftLastWriteTime.dwHighDateTime) << 32) | file_info.ftLastWriteTime.dwLowDateTime;
-        if (edit_time == last_edit_time) {
+        if (edit_time <= last_edit_time) {
             return false; // No change
         }
     }
     else {
         DEBUG_ASSERT(hot_reload_condition == HOT_RELOAD_FORCED, return false, "Invalid hot reload condition");
-    }
-
-    // Copy the DLL to a temporary file to avoid locking issues
-    if (!CopyFileA(HOT_RELOAD_DLL_PATH, HOT_RELOAD_DLL_TEMP_PATH, FALSE)) {
-        BUG("Failed to copy %s to %s", HOT_RELOAD_DLL_PATH, HOT_RELOAD_DLL_TEMP_PATH);
-        return false;
-    }
-
-    HMODULE new_app_dll = LoadLibraryA(HOT_RELOAD_DLL_TEMP_PATH);
-    if (!new_app_dll) {
-        BUG("Failed to load %s", HOT_RELOAD_DLL_TEMP_PATH);
-        return false;
     }
 
     if (app_dll) {
@@ -456,7 +453,18 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
         shutdown = NULL;
     }
 
-    app_dll = new_app_dll;
+    // Copy the DLL to a temporary file to avoid locking issues
+    if (!CopyFileA(HOT_RELOAD_DLL_PATH, HOT_RELOAD_DLL_TEMP_PATH, FALSE)) {
+        BUG("Failed to copy %s to %s", HOT_RELOAD_DLL_PATH, HOT_RELOAD_DLL_TEMP_PATH);
+        return false;
+    }
+
+    app_dll = LoadLibraryA(HOT_RELOAD_DLL_TEMP_PATH);
+    if (!app_dll) {
+        BUG("Failed to load %s", HOT_RELOAD_DLL_TEMP_PATH);
+        return false;
+    }
+
     init = (result(*)(init_in_params*, init_out_params*))GetProcAddress(app_dll, "init");
     update = (result(*)(update_params*))GetProcAddress(app_dll, "update");
     shutdown = (void(*)(shutdown_params*))GetProcAddress(app_dll, "shutdown");

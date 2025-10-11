@@ -276,17 +276,4 @@ typedef struct {
     textures textures;
 } init_out_params;
 
-#define APP_BACKEND
-#ifdef APP_BACKEND
-//#define HOT_RELOAD_HOST
-#ifdef HOT_RELOAD_HOST
-result(*init)(init_in_params* params, init_out_params* out_params);
-result(*update)(update_params* params);
-void (*shutdown)(shutdown_params* params);
-#else
-extern result init(init_in_params* in, init_out_params* out);
-extern result update(update_params* in);
-extern void shutdown(shutdown_params* in);
-#endif // HOT_RELOAD_HOST
-#endif // APP_BACKEND
 #endif // PLATFORM_LAYER_H

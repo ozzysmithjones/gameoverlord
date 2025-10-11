@@ -5,30 +5,23 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Glob source files
-file(GLOB_RECURSE SOURCES
-"src/*.c"
-"src/*.h"
+# file(GLOB_RECURSE SOURCES
+# "src/*.c"
+# "src/*.h"
+# )
+
+set(ENGINE_SOURCES
+    src/fundamental.h
+    src/platform_layer.h
+    src/windows_platform_layer.c
 )
 
+set(GAME_SOURCES
+    src/fundamental.h
+    src/game.c
+    src/game.h
+)
 
 # Update executable with source files
-add_executable(gameoverlord WIN32 ${SOURCES})
-
-# Find Vulkan package
-find_package(Vulkan REQUIRED)
-
-# Include Vulkan directories
-target_include_directories(gameoverlord PRIVATE ${Vulkan_INCLUDE_DIRS})
-
-# Link against Vulkan
-target_link_directories(gameoverlord PRIVATE ${Vulkan_LIBRARY_DIRS})
-target_link_libraries(gameoverlord PRIVATE Vulkan::Vulkan)
-
-# If you're on Windows and need to link with the Vulkan SDK directly
-if(WIN32)
-    # You might need to set Vulkan SDK path if CMake can't find it automatically
-    # set(VULKAN_SDK_PATH "C:/VulkanSDK/x.x.x.x")
-    # target_include_directories(gameoverlord PRIVATE "${VULKAN_SDK_PATH}/Include")
-    # target_link_directories(gameoverlord PRIVATE "${VULKAN_SDK_PATH}/Lib")
-    # target_link_libraries(gameoverlord PRIVATE vulkan-1)
-endif()
+add_executable(engine WIN32 ${ENGINE_SOURCES})
+add_library(game SHARED ${GAME_SOURCES})
