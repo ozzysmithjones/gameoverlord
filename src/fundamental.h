@@ -49,7 +49,7 @@ typedef struct {
     uint32_t length;
 } string;
 
-#define CSTR(string_literal) (string) { .text = string_literal, .length = sizeof(string_literal) - 1 }
+#define CSTR(string_literal) { .text = string_literal, .length = sizeof(string_literal) - 1 }
 static inline bool string_equal(string a, string b) {
     return a.length == b.length && (a.length == 0 || memcmp(a.text, b.text, a.length) == 0);
 }

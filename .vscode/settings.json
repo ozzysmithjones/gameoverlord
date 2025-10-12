@@ -65,6 +65,7 @@
         "optional": "cpp",
         "set": "cpp",
         "span": "cpp",
-        "string": "cpp"
+        "string": "cpp",
+        "directxmath.h": "c"
     }
 }

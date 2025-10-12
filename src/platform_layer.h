@@ -8,18 +8,10 @@
 
 
 typedef struct input input;
-typedef struct graphics graphics;
-typedef struct audio audio;
 
-// These functions are expected to be 
-
-
-
-/*
-
-Memory allocation stuff.
-
-*/
+// =============================================================
+// Memory allocation
+// =============================================================
 
 typedef struct {
     void* base;
@@ -42,9 +34,9 @@ typedef struct {
 } memory_allocators;
 
 
-/*
-Time stuff.
-*/
+// =============================================================
+// Time Measurement
+// =============================================================
 
 typedef struct {
     float frequency;
@@ -56,10 +48,89 @@ typedef struct {
 result create_clock(clock* clock);
 void update_clock(clock* clock);
 
+// =============================================================
+// Graphics
+// =============================================================
 
-/*
-User input stuff.
-*/
+typedef struct {
+    vector2 position;
+    vector2 texcoord;
+    vector2 scale;
+    float rotation;
+} sprite;
+
+#ifndef MAX_SPRITES
+#define MAX_SPRITES 32
+#endif
+
+typedef struct {
+    sprite* elements;
+    size_t count;
+} sprites;
+
+static inline result sprites_append(sprites* array, sprite element) {
+    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
+    ASSERT(array->count < MAX_SPRITES, return RESULT_FAILURE, "Capped array sprites capacity exceeded: %u, cannot append element.", MAX_SPRITES);
+    memcpy(&array->elements[array->count++], &element, sizeof(sprite));
+    return RESULT_SUCCESS;
+}
+
+static inline result sprites_append_multiple(sprites* array, sprite* elements, uint32_t count) {
+    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
+    ASSERT(array->count + count <= MAX_SPRITES, return RESULT_FAILURE, "Capped array sprites capacity exceeded: %u, cannot append elements.", MAX_SPRITES);
+    memcpy(&array->elements[array->count], elements, count * sizeof(sprite));
+    array->count += count;
+    return RESULT_SUCCESS;
+}
+
+static inline result sprites_remove(sprites* array, uint32_t index) {
+    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
+    ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %zu", index, array->count);
+    if (array->count > 0) {
+        memmove(&array->elements[index], &array->elements[index + 1], (array->count - (index - 1)) * sizeof(sprite));
+    }
+    --array->count;
+    return RESULT_SUCCESS;
+}
+
+static inline result sprites_remove_swap(sprites* array, uint32_t index) {
+    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
+    ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %zu", index, array->count);
+    if (array->count > 0) {
+        array->elements[index] = array->elements[array->count - 1];
+    }
+    --array->count;
+    return RESULT_SUCCESS;
+}
+
+static inline sprite* sprites_bounds_checked_lookup(sprites* array, sprite* fallback, uint32_t index) {
+    ASSERT(array != NULL, return fallback, "Capped array sprites cannot be NULL");
+    ASSERT(index < array->count, return fallback, "Index out of bounds: %u. Count = %zu", index, array->count);
+    return &array->elements[index];
+}
+
+static inline result sprites_bounds_checked_get(sprites* array, uint32_t index, sprite* out_element) {
+    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
+    ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %zu", index, array->count);
+    memcpy(out_element, &array->elements[index], sizeof(sprite));
+    return RESULT_SUCCESS;
+}
+
+static inline result sprites_bounds_checked_set(sprites* array, uint32_t index, sprite value) {
+    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
+    ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %zu", index, array->count);
+    memcpy(&array->elements[index], &value, sizeof(sprite));
+    return RESULT_SUCCESS;
+}
+
+static inline void sprites_clear(sprites* array) {
+    ASSERT(array != NULL, return, "Capped array sprites cannot be NULL");
+    array->count = 0;
+}
+
+// =============================================================
+// User Input
+// =============================================================
 
 typedef enum {
     KEY_NONE,
@@ -184,21 +255,19 @@ bool is_key_down(input* input_state, keyboard_key key);
 bool is_key_held_down(input* input_state, keyboard_key key);
 bool is_key_up(input* input_state, keyboard_key key);
 
-/*
+// =============================================================
+// File I/O
+// =============================================================
 
-File handling stuff.
-
-*/
-
+string get_executable_directory(bump_allocator* allocator);
+result find_first_file_with_extension(string directory, string extension, bump_allocator* allocator, string* out_full_path);
 bool file_exists(string path);
 result read_entire_file(string path, bump_allocator* allocator, string* out_file_contents);
 result write_entire_file(string path, const void* data, size_t size);
 
-/*
-
-Multithreading stuff.
-
-*/
+// =============================================================
+// Multithreading
+// =============================================================
 
 typedef union {
 #ifdef _WIN32
@@ -236,12 +305,16 @@ void init_condition_variable(condition_variable* cv);
 void signal_condition_variable(condition_variable* cv);
 void wait_condition_variable(condition_variable* cv, mutex* m);
 
+
+// =============================================================
+// APP Lifecycle
+// =============================================================
+
 typedef struct {
     void* app_state;
+    sprites* sprites;
     memory_allocators* memory_allocators;
     input* input;
-    graphics* graphics;
-    audio* audio;
     clock clock;
 } update_params;
 
@@ -251,29 +324,11 @@ typedef struct {
 } shutdown_params;
 
 typedef struct {
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-    uint8_t alpha;
-} color;
-
-typedef struct {
-    color* pixels;
-    int32_t width;
-    int32_t height;
-} texture;
-
-#ifndef MAX_TEXTURES
-#define MAX_TEXTURES 16
-#endif
-DECLARE_CAPPED_ARRAY(textures, texture, MAX_TEXTURES)
-typedef struct {
     memory_allocators* memory_allocators;
 } init_in_params;
 
 typedef struct {
     void* app_state;
-    textures textures;
 } init_out_params;
 
 #endif // PLATFORM_LAYER_H

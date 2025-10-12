@@ -130,6 +130,85 @@ static inline vector3 vector3_lerp(vector3 a, vector3 b, float t) {
 }
 
 typedef struct {
+    float m[4][4];
+} matrix;
+
+static inline matrix matrix_identity() {
+    matrix result = { 0 };
+    result.m[0][0] = 1.0f;
+    result.m[1][1] = 1.0f;
+    result.m[2][2] = 1.0f;
+    result.m[3][3] = 1.0f;
+    return result;
+}
+
+static inline matrix matrix_multiply(matrix a, matrix b) {
+    //TODO: Optimize with SIMD
+    matrix return_value = { 0 };
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            for (int k = 0; k < 4; ++k) {
+                return_value.m[i][j] += a.m[i][k] * b.m[k][j];
+            }
+        }
+    }
+    return return_value;
+}
+
+// static matrix perspective_matrix(float fov_y, float aspect, float near, float far) {
+//     float f = 1.0f / tanf(fov_y / 2.0f);
+//     matrix return_value = { 0 };
+//     return_value.m[0][0] = f / aspect;
+//     return_value.m[1][1] = f;
+//     return_value.m[2][2] = (far + near) / (near - far);
+//     return_value.m[2][3] = -1.0f;
+//     return_value.m[3][2] = (2.0f * far * near) / (near - far);
+//     return return_value;
+// }
+
+static matrix view_matrix(vector3 eye, vector3 target, vector3 up) {
+    vector3 zaxis = vector3_normalize(vector3_sub(target, eye));    // The "forward" vector.
+    vector3 xaxis = vector3_normalize(vector3_cross(up, zaxis)); // The "right" vector.
+    vector3 yaxis = vector3_cross(zaxis, xaxis);     // The "up" vector.
+
+    matrix view = { 0 };
+    view.m[0][0] = xaxis.x;
+    view.m[1][0] = xaxis.y;
+    view.m[2][0] = xaxis.z;
+    view.m[3][0] = -vector3_dot(xaxis, eye);
+
+    view.m[0][1] = yaxis.x;
+    view.m[1][1] = yaxis.y;
+    view.m[2][1] = yaxis.z;
+    view.m[3][1] = -vector3_dot(yaxis, eye);
+
+    view.m[0][2] = -zaxis.x;
+    view.m[1][2] = -zaxis.y;
+    view.m[2][2] = -zaxis.z;
+    view.m[3][2] = vector3_dot(zaxis, eye);
+
+    view.m[0][3] = 0.0f;
+    view.m[1][3] = 0.0f;
+    view.m[2][3] = 0.0f;
+    view.m[3][3] = 1.0f;
+
+    return view;
+}
+
+static matrix orthographic_matrix(float left, float right, float bottom, float top, float near_plane, float far_plane) {
+    matrix result_value = { 0 };
+    result_value.m[0][0] = 2.0f / (right - left);
+    result_value.m[1][1] = 2.0f / (top - bottom);
+    result_value.m[2][2] = -2.0f / (far_plane - near_plane);
+    result_value.m[3][0] = -(right + left) / (right - left);
+    result_value.m[3][1] = -(top + bottom) / (top - bottom);
+    result_value.m[3][2] = -(far_plane + near_plane) / (far_plane - near_plane);
+    result_value.m[3][3] = 1.0f;
+    return result_value;
+}
+
+
+typedef struct {
     vector2 min;
     vector2 max;
 } rect;
