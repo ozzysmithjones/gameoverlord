@@ -8,6 +8,7 @@
 
 
 typedef struct input input;
+typedef struct graphics graphics;
 
 // =============================================================
 // Memory allocation
@@ -53,80 +54,22 @@ void update_clock(clock* clock);
 // =============================================================
 
 typedef struct {
-    vector2 position;
-    vector2 texcoord;
-    vector2 scale;
-    float rotation;
-} sprite;
+    int32_t x;
+    int32_t y;
+} vector2int;
 
 #ifndef MAX_SPRITES
 #define MAX_SPRITES 32
 #endif
 
-typedef struct {
-    sprite* elements;
-    size_t count;
-} sprites;
 
-static inline result sprites_append(sprites* array, sprite element) {
-    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
-    ASSERT(array->count < MAX_SPRITES, return RESULT_FAILURE, "Capped array sprites capacity exceeded: %u, cannot append element.", MAX_SPRITES);
-    memcpy(&array->elements[array->count++], &element, sizeof(sprite));
-    return RESULT_SUCCESS;
-}
 
-static inline result sprites_append_multiple(sprites* array, sprite* elements, uint32_t count) {
-    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
-    ASSERT(array->count + count <= MAX_SPRITES, return RESULT_FAILURE, "Capped array sprites capacity exceeded: %u, cannot append elements.", MAX_SPRITES);
-    memcpy(&array->elements[array->count], elements, count * sizeof(sprite));
-    array->count += count;
-    return RESULT_SUCCESS;
-}
-
-static inline result sprites_remove(sprites* array, uint32_t index) {
-    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
-    ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %zu", index, array->count);
-    if (array->count > 0) {
-        memmove(&array->elements[index], &array->elements[index + 1], (array->count - (index - 1)) * sizeof(sprite));
-    }
-    --array->count;
-    return RESULT_SUCCESS;
-}
-
-static inline result sprites_remove_swap(sprites* array, uint32_t index) {
-    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
-    ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %zu", index, array->count);
-    if (array->count > 0) {
-        array->elements[index] = array->elements[array->count - 1];
-    }
-    --array->count;
-    return RESULT_SUCCESS;
-}
-
-static inline sprite* sprites_bounds_checked_lookup(sprites* array, sprite* fallback, uint32_t index) {
-    ASSERT(array != NULL, return fallback, "Capped array sprites cannot be NULL");
-    ASSERT(index < array->count, return fallback, "Index out of bounds: %u. Count = %zu", index, array->count);
-    return &array->elements[index];
-}
-
-static inline result sprites_bounds_checked_get(sprites* array, uint32_t index, sprite* out_element) {
-    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
-    ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %zu", index, array->count);
-    memcpy(out_element, &array->elements[index], sizeof(sprite));
-    return RESULT_SUCCESS;
-}
-
-static inline result sprites_bounds_checked_set(sprites* array, uint32_t index, sprite value) {
-    ASSERT(array != NULL, return RESULT_FAILURE, "Capped array sprites cannot be NULL");
-    ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %zu", index, array->count);
-    memcpy(&array->elements[index], &value, sizeof(sprite));
-    return RESULT_SUCCESS;
-}
-
-static inline void sprites_clear(sprites* array) {
-    ASSERT(array != NULL, return, "Capped array sprites cannot be NULL");
-    array->count = 0;
-}
+/// @brief Draw a sprite to the screen, where the screen is split up into virtual pixels (that don't necessarily correspond to actual screen pixels).
+/// @param graphics The graphics context.
+/// @param position The position of the sprite in virtual pixels.
+/// @param scale The scale of the sprite in pixels, used both for the scale on screen and the size of the sprite to sample from the sprite sheet.
+/// @param texcoord The texture coordinates of the sprite in pixels, where (0,0) is the top-left of the sprite sheet.
+void draw_sprite(graphics* graphics, vector2int position, vector2int scale, vector2int texcoord, float rotation);
 
 // =============================================================
 // User Input
@@ -312,7 +255,7 @@ void wait_condition_variable(condition_variable* cv, mutex* m);
 
 typedef struct {
     void* app_state;
-    sprites* sprites;
+    graphics* graphics;
     memory_allocators* memory_allocators;
     input* input;
     clock clock;

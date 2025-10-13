@@ -133,7 +133,7 @@ typedef struct {
     float m[4][4];
 } matrix;
 
-static inline matrix matrix_identity() {
+static inline matrix identity_matrix(void) {
     matrix result = { 0 };
     result.m[0][0] = 1.0f;
     result.m[1][1] = 1.0f;

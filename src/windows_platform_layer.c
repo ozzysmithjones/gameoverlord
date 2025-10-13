@@ -133,6 +133,7 @@ void update_clock(clock* clock) {
     clock->time_since_creation = (float)current_time.QuadPart - clock->creation_time;
 }
 
+
 string get_executable_directory(bump_allocator* allocator) {
     char* path = (char*)bump_allocate(allocator, 1, MAX_PATH);
     if (path == NULL) {
@@ -142,6 +143,7 @@ string get_executable_directory(bump_allocator* allocator) {
         };
     }
     DWORD length = GetModuleFileNameA(NULL, path, MAX_PATH);
+    allocator->used_bytes -= (MAX_PATH - length - 1); // Free unused memory from bump allocator.
 
     // cut the executable name from the path:
     for (DWORD i = length; i > 0; --i) {
@@ -262,7 +264,7 @@ result write_entire_file(string path, const void* data, size_t size) {
     return RESULT_SUCCESS;
 }
 
-#ifdef APP_BACKEND
+
 typedef struct input {
     uint64_t keys_pressed_bitset[4];
     uint64_t keys_modified_this_frame_bitset[4];
@@ -480,7 +482,7 @@ CSTR(STRINGIFY(
 struct VS_INPUT {
     // Vertex data
     float2 vertex_position : POSITION;
-    float2 vertex_texcoord : TEXCOORD0;
+    float2 vertex_texcoord : TEXCOORD;
 
     // Instance data
     float2 sprite_position : SPRITE_POSITION;
@@ -504,15 +506,19 @@ PS_INPUT main(VS_INPUT input) {
     );
     float2 scaled_position = rotated_position * input.sprite_scale;
     float2 world_position = scaled_position + input.sprite_position;
+
+    // Use the view_proj matrix for proper transformation
     output.position = mul(float4(world_position, 0.0f, 1.0f), view_proj);
+
     output.texcoord = input.sprite_texcoord + (input.vertex_texcoord * input.sprite_scale);
     return output;
-        ));
+}
+));
 
 string pixel_shader_source =
 CSTR(STRINGIFY(
-    Texture2D shader_texture : register(t0);
-SamplerState sampler_state : register(s0);
+    Texture2D spriteSheetTexture : register(t0);
+SamplerState spriteSheetSampler : register(s0);
 
 struct PS_INPUT {
     float4 position : SV_POSITION;
@@ -520,13 +526,31 @@ struct PS_INPUT {
 };
 
 float4 main(PS_INPUT input) : SV_TARGET{
-    return shader_texture.Sample(sampler_state, input.texcoord);
+    // Solid red color for debugging visibility issues
+    //return float4(1.0, 0.0, 0.0, 1.0);
+// Later when this works, use the texture:
+    return spriteSheetTexture.Sample(spriteSheetSampler, input.texcoord);
 }
 ));
 
 #pragma endregion
 
+typedef struct {
+    vector2 position;
+    vector2 texcoord;
+    vector2 scale;
+    float rotation;
+} sprite_instance;
+
+typedef struct {
+    sprite_instance* elements;
+    size_t count;
+} sprite_instances;
+
 typedef struct graphics {
+    vector2int sprite_sheet_size;
+    window_size cached_window_size;
+    window* window;
     HINSTANCE process_instance;
     D3D_DRIVER_TYPE driver_type;
     D3D_FEATURE_LEVEL feature_level;
@@ -539,18 +563,50 @@ typedef struct graphics {
     ID3D11InputLayout* input_layout;
     ID3D11SamplerState* sampler_state;
     ID3D11RasterizerState* rasterizer_state;
+    ID3D11BlendState* blend_state;
     ID3D11Texture2D* sprite_sheet_texture;
     ID3D11ShaderResourceView* sprite_sheet_shader_resource;
     ID3D11Buffer* instance_buffer;
+    D3D11_MAPPED_SUBRESOURCE instance_buffer_mapping;
     ID3D11Buffer* vertex_buffer;
     ID3D11Buffer* constant_buffer;
     matrix view_projection;
+    sprite_instances sprite_instances;
 } graphics;
 
-static result compile_shader(const char* code, size_t code_length, ID3DBlob** out_blob) {
+void draw_sprite(graphics* graphics, vector2int position, vector2int scale, vector2int texcoord, float rotation) {
+    ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
+    if (graphics->sprite_instances.count >= MAX_SPRITES) {
+        BUG("Exceeded maximum number of sprites per frame (%d). Increase MAX_SPRITES or reduce draw calls.", MAX_SPRITES);
+        return;
+    }
+
+    // Debug info to ensure the sprites are being added correctly
+    printf("Drawing sprite at position: (%d, %d), scale: (%d, %d)\n", position.x, position.y, scale.x, scale.y);
+
+    sprite_instance* instance = &graphics->sprite_instances.elements[graphics->sprite_instances.count];
+    ++graphics->sprite_instances.count;
+
+    memset(instance, 0, sizeof(*instance));
+
+    // Need to convert from pixel coordinates to normalized device coordinates (-1 to 1)
+    float ndc_x = ((float)position.x / (float)graphics->cached_window_size.width) * 2.0f - 1.0f;
+    float ndc_y = 1.0f - ((float)position.y / (float)graphics->cached_window_size.height) * 2.0f;
+    instance->position = (vector2){ ndc_x, ndc_y };
+    instance->scale = (vector2){ (float)scale.x / (float)graphics->cached_window_size.width * 2.0f, (float)scale.y / (float)graphics->cached_window_size.height * 2.0f };
+    instance->texcoord = (vector2){ (float)texcoord.x / (float)graphics->sprite_sheet_size.x, (float)texcoord.y / (float)graphics->sprite_sheet_size.y };
+    instance->rotation = rotation;
+}
+
+static result compile_shader(const char* code, size_t code_length, LPCSTR shader_model, ID3DBlob** out_blob) {
     ASSERT(code != NULL, return RESULT_FAILURE, "Shader code cannot be NULL");
     ASSERT(code_length > 0, return RESULT_FAILURE, "Shader code length must be greater than zero");
     ASSERT(out_blob != NULL, return RESULT_FAILURE, "Output blob pointer cannot be NULL");
+
+    DWORD compile_flags = D3DCOMPILE_ENABLE_STRICTNESS;
+#ifdef _DEBUG
+    compile_flags |= D3D11_CREATE_DEVICE_DEBUG | D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
 
     ID3DBlob* shader_blob = NULL;
     ID3DBlob* error_blob = NULL;
@@ -562,8 +618,8 @@ static result compile_shader(const char* code, size_t code_length, ID3DBlob** ou
         NULL,
         NULL,
         "main",
-        "vs_5_0",
-        0,
+        shader_model,
+        compile_flags,
         0,
         &shader_blob,
         &error_blob
@@ -590,6 +646,7 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
     ASSERT(graphics != NULL, return RESULT_FAILURE, "Graphics pointer cannot be NULL");
     memset(graphics, 0, sizeof(*graphics));
 
+    graphics->window = window;
     graphics->process_instance = GetModuleHandle(NULL);
     graphics->driver_type = D3D_DRIVER_TYPE_HARDWARE;
     graphics->feature_level = D3D_FEATURE_LEVEL_11_0;
@@ -599,6 +656,8 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
         BUG("Failed to get valid window size.");
         return RESULT_FAILURE;
     }
+
+    graphics->cached_window_size = size;
 
     DXGI_SWAP_CHAIN_DESC swap_chain_desc = { 0 };
     swap_chain_desc.BufferCount = 1;
@@ -613,11 +672,16 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
     swap_chain_desc.SampleDesc.Quality = 0;
     swap_chain_desc.Windowed = (window->mode != WINDOW_MODE_FULLSCREEN);
 
+    UINT device_flags = 0;
+#ifdef _DEBUG
+    device_flags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+
     HRESULT hr = D3D11CreateDeviceAndSwapChain(
         NULL,
         graphics->driver_type,
         NULL,
-        0,
+        device_flags,
         &graphics->feature_level,
         1,
         D3D11_SDK_VERSION,
@@ -648,6 +712,7 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
             BUG("Failed to create render target view. HRESULT: 0x%08X", hr);
             return RESULT_FAILURE;
         }
+        // Set render target without depth stencil view
         graphics->context->lpVtbl->OMSetRenderTargets(graphics->context, 1, &graphics->render_target_view, NULL);
     }
     // Set viewport:
@@ -663,7 +728,7 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
     {
         ID3DBlob* vertex_shader_blob = NULL;
 
-        if (compile_shader(vertex_shader_source.text, vertex_shader_source.length, &vertex_shader_blob) != RESULT_SUCCESS) {
+        if (compile_shader(vertex_shader_source.text, vertex_shader_source.length, "vs_5_0", &vertex_shader_blob) != RESULT_SUCCESS) {
             BUG("Failed to compile vertex shader.");
             return RESULT_FAILURE;
         }
@@ -682,15 +747,21 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
         {
             D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
                 // Vertex data
-                { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-                { "TEXCOORD0", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+                { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+                { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 
-                // Instance data
-                { "SPRITE_POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 1, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
-                { "SPRITE_TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 1, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
-                { "SPRITE_SCALE", 0, DXGI_FORMAT_R32G32_FLOAT, 1, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
-                { "SPRITE_ROTATION", 0, DXGI_FORMAT_R32_FLOAT, 1, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+                // Instance data`
+                { "SPRITE_POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 0, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+                { "SPRITE_TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 8, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+                { "SPRITE_SCALE", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+                { "SPRITE_ROTATION", 0, DXGI_FORMAT_R32_FLOAT, 1, 24, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
             };
+
+            // Check shader blob is valid before using
+            if (!buffer_pointer || buffer_size == 0) {
+                BUG("Invalid vertex shader blob for CreateInputLayout");
+                return RESULT_FAILURE;
+            }
 
             hr = graphics->device->lpVtbl->CreateInputLayout(
                 graphics->device,
@@ -718,7 +789,7 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
     {
         ID3DBlob* pixel_shader_blob = NULL;
 
-        if (compile_shader(pixel_shader_source.text, pixel_shader_source.length, &pixel_shader_blob) != RESULT_SUCCESS) {
+        if (compile_shader(pixel_shader_source.text, pixel_shader_source.length, "ps_5_0", &pixel_shader_blob) != RESULT_SUCCESS) {
             BUG("Failed to compile pixel shader.");
             return RESULT_FAILURE;
         }
@@ -733,11 +804,6 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
         }
 
         graphics->context->lpVtbl->PSSetShader(graphics->context, graphics->pixel_shader, NULL, 0);
-
-        // Create shader resource view for sprite sheet texture:
-        {
-            //hr = graphics->device->lpVtbl->CreateShaderResourceView(graphics->device, , NULL, &graphics->sprite_sheet_shader_resource);
-        }
     }
 
     // constant buffer for view-projection matrix in vertex shader:
@@ -746,7 +812,7 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
         buffer_desc.Usage = D3D11_USAGE_DYNAMIC;
         buffer_desc.ByteWidth = sizeof(matrix); // 4x4 matrix
         buffer_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        buffer_desc.CPUAccessFlags = 0;
+        buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
         buffer_desc.MiscFlags = 0;
         buffer_desc.StructureByteStride = 0;
 
@@ -794,11 +860,11 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
         graphics->context->lpVtbl->IASetVertexBuffers(graphics->context, 0, 1, &graphics->vertex_buffer, &stride, &offset);
     }
 
-    // sprite butter for instance data will be set per draw call
+    // sprite buffer for instance data will be set per draw call
     {
         D3D11_BUFFER_DESC buffer_desc = { 0 };
         buffer_desc.Usage = D3D11_USAGE_DYNAMIC;
-        buffer_desc.ByteWidth = (UINT)(sizeof(sprite) * MAX_SPRITES); // Space for max_sprites sprites, can be adjusted as needed
+        buffer_desc.ByteWidth = (UINT)(sizeof(sprite_instance) * MAX_SPRITES); // Space for max_sprites sprites, can be adjusted as needed
         buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
         buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
         buffer_desc.MiscFlags = 0;
@@ -810,7 +876,7 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
             return RESULT_FAILURE;
         }
 
-        UINT stride = sizeof(sprite);
+        UINT stride = sizeof(sprite_instance);
         UINT offset = 0;
         graphics->context->lpVtbl->IASetVertexBuffers(graphics->context, 1, 1, &graphics->instance_buffer, &stride, &offset);
     }
@@ -851,6 +917,8 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
             return RESULT_FAILURE;
         }
 
+        graphics->sprite_sheet_size = (vector2int){ image_width, image_height };
+
         D3D11_TEXTURE2D_DESC texture_desc = { 0 };
         texture_desc.Width = image_width;
         texture_desc.Height = image_height;
@@ -889,12 +957,13 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
     {
         D3D11_RASTERIZER_DESC rasterizer_desc = { 0 };
         rasterizer_desc.FillMode = D3D11_FILL_SOLID;
-        rasterizer_desc.CullMode = D3D11_CULL_BACK;
+        rasterizer_desc.CullMode = D3D11_CULL_NONE;
         rasterizer_desc.FrontCounterClockwise = FALSE;
         rasterizer_desc.DepthBias = 0;
         rasterizer_desc.DepthBiasClamp = 0.0f;
         rasterizer_desc.SlopeScaledDepthBias = 0.0f;
-        rasterizer_desc.DepthClipEnable = TRUE;
+        rasterizer_desc.DepthClipEnable = TRUE;  // Changed to TRUE to ensure proper clipping
+        rasterizer_desc.ScissorEnable = FALSE;   // Explicitly set scissor to off
         rasterizer_desc.MultisampleEnable = FALSE;
         rasterizer_desc.AntialiasedLineEnable = FALSE;
 
@@ -903,16 +972,39 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
             BUG("Failed to create rasterizer state. HRESULT: 0x%08X", hr);
             return RESULT_FAILURE;
         }
+
+        // Set the rasterizer state to use
+        graphics->context->lpVtbl->RSSetState(graphics->context, graphics->rasterizer_state);
     }
 
-    graphics->view_projection = orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f);
+    // Blend state for transparent sprites:
+    {
+        D3D11_BLEND_DESC blend_desc = { 0 };
+        blend_desc.RenderTarget[0].BlendEnable = TRUE;
+        blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+        blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+        blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+        blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+        blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+        blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+
+        hr = graphics->device->lpVtbl->CreateBlendState(graphics->device, &blend_desc, &graphics->blend_state);
+        if (FAILED(hr)) {
+            BUG("Failed to create blend state. HRESULT: 0x%08X", hr);
+            return RESULT_FAILURE;
+        }
+
+        // Set the blend state
+        float blend_factor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        graphics->context->lpVtbl->OMSetBlendState(graphics->context, graphics->blend_state, blend_factor, 0xFFFFFFFF);
+    }    // Use orthographic matrix for 2D rendering instead of identity
+    graphics->view_projection = identity_matrix();//orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f);
     return RESULT_SUCCESS;
 }
 
-static void draw_graphics(graphics* graphics, sprite* sprites, size_t sprite_count, matrix view_projection) {
+static void draw_graphics(graphics* graphics, matrix view_projection) {
     ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
-    ASSERT(sprites != NULL, return, "Sprites pointer cannot be NULL");
-    ASSERT(sprite_count > 0 && sprite_count <= MAX_SPRITES, return, "Sprite count must be between 1 and %d", MAX_SPRITES);
 
     // Update constant buffer with view-projection matrix
     D3D11_MAPPED_SUBRESOURCE mapped_resource;
@@ -925,25 +1017,25 @@ static void draw_graphics(graphics* graphics, sprite* sprites, size_t sprite_cou
     graphics->context->lpVtbl->Unmap(graphics->context, (ID3D11Resource*)graphics->constant_buffer, 0);
     graphics->context->lpVtbl->VSSetConstantBuffers(graphics->context, 0, 1, &graphics->constant_buffer);
 
-    // Update instance buffer with sprite data
-    hr = graphics->context->lpVtbl->Map(graphics->context, (ID3D11Resource*)graphics->instance_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_resource);
-    if (FAILED(hr)) {
-        BUG("Failed to map instance buffer. HRESULT: 0x%08X", hr);
-        return;
-    }
-    memcpy(mapped_resource.pData, sprites, sizeof(sprite) * sprite_count);
-    graphics->context->lpVtbl->Unmap(graphics->context, (ID3D11Resource*)graphics->instance_buffer, 0);
-
     // Clear render target
-    float clear_color[4] = { 0.1f, 0.1f, 0.1f, 1.0f };
+    float clear_color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
     graphics->context->lpVtbl->ClearRenderTargetView(graphics->context, graphics->render_target_view, clear_color);
 
     // Draw call
     UINT vertex_count = 6; // Two triangles per quad
-    UINT instance_count = (UINT)sprite_count;
+    UINT instance_count = (UINT)graphics->sprite_instances.count;
     UINT start_vertex_location = 0;
     UINT start_instance_location = 0;
-    graphics->context->lpVtbl->DrawInstanced(graphics->context, vertex_count, instance_count, start_vertex_location, start_instance_location);
+
+    if (instance_count > 0) {
+        graphics->context->lpVtbl->RSSetState(graphics->context, graphics->rasterizer_state);
+        graphics->context->lpVtbl->OMSetRenderTargets(graphics->context, 1, &graphics->render_target_view, NULL);
+
+        float blend_factor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        graphics->context->lpVtbl->OMSetBlendState(graphics->context, graphics->blend_state, blend_factor, 0xFFFFFFFF);
+        graphics->context->lpVtbl->DrawInstanced(graphics->context, vertex_count, instance_count, start_vertex_location, start_instance_location);
+    }
+
     graphics->swap_chain->lpVtbl->Present(graphics->swap_chain, 1, 0);
 }
 
@@ -960,6 +1052,10 @@ static void destroy_graphics(graphics* graphics) {
     if (graphics->sprite_sheet_texture) {
         graphics->sprite_sheet_texture->lpVtbl->Release(graphics->sprite_sheet_texture);
         graphics->sprite_sheet_texture = NULL;
+    }
+    if (graphics->blend_state) {
+        graphics->blend_state->lpVtbl->Release(graphics->blend_state);
+        graphics->blend_state = NULL;
     }
     if (graphics->rasterizer_state) {
         graphics->rasterizer_state->lpVtbl->Release(graphics->rasterizer_state);
@@ -1080,7 +1176,6 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
 
 static struct {
     memory_allocators memory_allocators;
-    sprites sprites;
     window window;
     graphics graphics;
     clock clock;
@@ -1142,6 +1237,8 @@ static void destroy_app(void) {
 #endif
 }
 
+
+#ifdef APP_BACKEND
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
 #ifdef HOT_RELOAD_HOST
     if (!potential_hot_reload(HOT_RELOAD_FORCED)) {
@@ -1173,10 +1270,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             break;
         }
 
-        {
+        { // Map the instance buffer to update instance data
+            HRESULT hr = app.graphics.context->lpVtbl->Map(app.graphics.context, (ID3D11Resource*)app.graphics.instance_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &app.graphics.instance_buffer_mapping);
+            if (FAILED(hr)) {
+                BUG("Failed to map instance buffer. HRESULT: 0x%08X", hr);
+                return -1;
+            }
+
+            app.graphics.sprite_instances.elements = (sprite_instance*)app.graphics.instance_buffer_mapping.pData;
+            app.graphics.sprite_instances.count = 0;
+        }
+
+        { // Update app
             update_params update_params = { 0 };
             update_params.clock = app.clock;
-            update_params.sprites = &app.sprites;
+            update_params.graphics = &app.graphics;
             update_params.memory_allocators = &app.memory_allocators;
             update_params.input = input_state;
             update_params.app_state = app.app_state;
@@ -1187,7 +1295,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             }
         }
 
-        draw_graphics(&app.graphics, app.sprites.elements, app.sprites.count, app.graphics.view_projection);
+        { // Unmap the instance buffer after updating sprite data (presumably from update app)
+            app.graphics.context->lpVtbl->Unmap(app.graphics.context, (ID3D11Resource*)app.graphics.instance_buffer, 0);
+        }
+
+        draw_graphics(&app.graphics, app.graphics.view_projection);
+
     }
 
 cleanup:

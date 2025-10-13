@@ -27,11 +27,15 @@ SET(GAME_SOURCES
    )
 
 # Update executable with source files
-if (WIN32)
-add_executable(engine WIN32 ${ENGINE_SOURCES})
-target_compile_definitions(engine PRIVATE APP_BACKEND HOT_RELOAD_HOST)
-target_link_libraries(engine d3d11 dxgi d3dcompiler)
+SET(HOT_RELOAD OFF)
+
+if(HOT_RELOAD)
+    add_executable(engine WIN32 ${ENGINE_SOURCES})
+    target_compile_definitions(engine PRIVATE APP_BACKEND HOT_RELOAD_HOST)
+    target_link_libraries(engine d3d11 dxgi d3dcompiler)
+    add_library(game SHARED ${GAME_SOURCES})
 else()
-error("Unsupported platform")
+    add_executable(game WIN32 ${GAME_SOURCES})
+    target_compile_definitions(game PRIVATE APP_BACKEND)
+    target_link_libraries(game d3d11 dxgi d3dcompiler)
 endif()
-add_library(game SHARED ${GAME_SOURCES})
