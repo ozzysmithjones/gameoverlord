@@ -41,6 +41,7 @@ typedef struct {
 
 typedef struct {
     float frequency;
+    float previous_update_time;
     float time_since_previous_update;
     float creation_time;
     float time_since_creation;
@@ -63,13 +64,13 @@ typedef struct {
 #endif
 
 
-
 /// @brief Draw a sprite to the screen, where the screen is split up into virtual pixels (that don't necessarily correspond to actual screen pixels).
 /// @param graphics The graphics context.
 /// @param position The position of the sprite in virtual pixels.
 /// @param scale The scale of the sprite in pixels, used both for the scale on screen and the size of the sprite to sample from the sprite sheet.
 /// @param texcoord The texture coordinates of the sprite in pixels, where (0,0) is the top-left of the sprite sheet.
-void draw_sprite(graphics* graphics, vector2int position, vector2int scale, vector2int texcoord, float rotation);
+void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int texcoord, vector2int texscale, float rotation);
+vector2int get_display_size(graphics* graphics);
 
 // =============================================================
 // User Input

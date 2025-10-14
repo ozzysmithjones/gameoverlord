@@ -129,10 +129,11 @@ void update_clock(clock* clock) {
         return;
     }
 
-    clock->time_since_previous_update = (float)(current_time.QuadPart - clock->time_since_creation) / clock->frequency;
-    clock->time_since_creation = (float)current_time.QuadPart - clock->creation_time;
+    float current_time_seconds = (float)current_time.QuadPart / clock->frequency;
+    clock->time_since_previous_update = current_time_seconds - clock->previous_update_time;
+    clock->time_since_creation = current_time_seconds - clock->creation_time;
+    clock->previous_update_time = current_time_seconds;
 }
-
 
 string get_executable_directory(bump_allocator* allocator) {
     char* path = (char*)bump_allocate(allocator, 1, MAX_PATH);
@@ -526,9 +527,7 @@ struct PS_INPUT {
 };
 
 float4 main(PS_INPUT input) : SV_TARGET{
-    // Solid red color for debugging visibility issues
     //return float4(1.0, 0.0, 0.0, 1.0);
-// Later when this works, use the texture:
     return spriteSheetTexture.Sample(spriteSheetSampler, input.texcoord);
 }
 ));
@@ -574,15 +573,12 @@ typedef struct graphics {
     sprite_instances sprite_instances;
 } graphics;
 
-void draw_sprite(graphics* graphics, vector2int position, vector2int scale, vector2int texcoord, float rotation) {
+void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int texcoord, vector2int texscale, float rotation) {
     ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
     if (graphics->sprite_instances.count >= MAX_SPRITES) {
         BUG("Exceeded maximum number of sprites per frame (%d). Increase MAX_SPRITES or reduce draw calls.", MAX_SPRITES);
         return;
     }
-
-    // Debug info to ensure the sprites are being added correctly
-    printf("Drawing sprite at position: (%d, %d), scale: (%d, %d)\n", position.x, position.y, scale.x, scale.y);
 
     sprite_instance* instance = &graphics->sprite_instances.elements[graphics->sprite_instances.count];
     ++graphics->sprite_instances.count;
@@ -596,6 +592,15 @@ void draw_sprite(graphics* graphics, vector2int position, vector2int scale, vect
     instance->scale = (vector2){ (float)scale.x / (float)graphics->cached_window_size.width * 2.0f, (float)scale.y / (float)graphics->cached_window_size.height * 2.0f };
     instance->texcoord = (vector2){ (float)texcoord.x / (float)graphics->sprite_sheet_size.x, (float)texcoord.y / (float)graphics->sprite_sheet_size.y };
     instance->rotation = rotation;
+}
+
+vector2int get_display_size(graphics* graphics) {
+    ASSERT(graphics != NULL, return ((vector2int) {
+        0, 0
+    }), "Graphics pointer cannot be NULL");
+    return (vector2int) {
+        graphics->cached_window_size.width, graphics->cached_window_size.height
+    };
 }
 
 static result compile_shader(const char* code, size_t code_length, LPCSTR shader_model, ID3DBlob** out_blob) {
@@ -810,7 +815,7 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
     {
         D3D11_BUFFER_DESC buffer_desc = { 0 };
         buffer_desc.Usage = D3D11_USAGE_DYNAMIC;
-        buffer_desc.ByteWidth = sizeof(matrix); // 4x4 matrix
+        buffer_desc.ByteWidth = sizeof(matrix);
         buffer_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
         buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
         buffer_desc.MiscFlags = 0;

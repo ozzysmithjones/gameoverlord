@@ -195,16 +195,26 @@ static matrix view_matrix(vector3 eye, vector3 target, vector3 up) {
     return view;
 }
 
-static matrix orthographic_matrix(float left, float right, float bottom, float top, float near_plane, float far_plane) {
-    matrix result_value = { 0 };
-    result_value.m[0][0] = 2.0f / (right - left);
-    result_value.m[1][1] = 2.0f / (top - bottom);
-    result_value.m[2][2] = -2.0f / (far_plane - near_plane);
-    result_value.m[3][0] = -(right + left) / (right - left);
-    result_value.m[3][1] = -(top + bottom) / (top - bottom);
-    result_value.m[3][2] = -(far_plane + near_plane) / (far_plane - near_plane);
-    result_value.m[3][3] = 1.0f;
-    return result_value;
+static inline matrix orthographic_matrix(float left, float right, float bottom, float top, float near_plane, float far_plane) {
+    matrix result = { 0 };
+    float width = right - left;
+    float height = top - bottom;
+    float depth = far_plane - near_plane;
+
+    // Map x from [left, right] to [-1, 1]
+    result.m[0][0] = 2.0f / width;
+    result.m[3][0] = -(right + left) / width;
+
+    // Map y from [bottom, top] to [-1, 1] (flipped for DirectX)
+    result.m[1][1] = 2.0f / height;
+    result.m[3][1] = -(top + bottom) / height;
+
+    // Map z from [near, far] to [0, 1]
+    result.m[2][2] = 1.0f / depth;
+    result.m[3][2] = -near_plane / depth;
+
+    result.m[3][3] = 1.0f;
+    return result;
 }
 
 

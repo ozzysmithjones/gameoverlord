@@ -4,6 +4,7 @@
 
 
 typedef struct {
+    vector2 position;
     int placeholder;
 } game_state;
 
@@ -13,11 +14,13 @@ __declspec(dllexport) result init(init_in_params* in, init_out_params* out) {
         BUG("Failed to allocate memory for game state.");
         return RESULT_FAILURE;
     }
+    memset(state, 0, sizeof(game_state));
     out->app_state = state;
 
     puts("Hello from game init!");
     return RESULT_SUCCESS;
 }
+
 
 __declspec(dllexport) result update(update_params* in) {
     game_state* state = (game_state*)in->app_state;
@@ -26,17 +29,23 @@ __declspec(dllexport) result update(update_params* in) {
         return RESULT_FAILURE;
     }
 
-    // Draw the sprite at center of screen with a large size to make it obvious
-    vector2int position = { 640, 360 }; // Center of a 1280x720 window
-    vector2int scale = { 400, 400 };   // Large size
+    vector2 scale = { 400, 400 };   // Large size
     vector2int texcoord = { 0, 0 };    // Top-left of the sprite sheet
+    vector2int texscale = { 64, 64 };  // Assuming the sprite is 64x64 pixels in size
     float rotation = 0.0f;             // No rotation
 
-    draw_sprite(in->graphics, position, scale, texcoord, rotation);
+    state->position.x += in->clock.time_since_previous_update * 1000.0f;
+
+    vector2int display_size = get_display_size(in->graphics);
+    if (state->position.x > (float)display_size.x) {
+        state->position.x = 0.0f;
+    }
+
+    draw_sprite(in->graphics, state->position, scale, texcoord, texscale, rotation);
 
     // Debug message
-    printf("Game update: Drew sprite at position: (%d, %d) with scale: (%d, %d)\n",
-        position.x, position.y, scale.x, scale.y);
+    printf("Game update: Drew sprite at position: (%f, %f) with scale: (%f, %f)\n",
+        state->position.x, state->position.y, scale.x, scale.y);
 
     puts("Hello from game update!");
     return RESULT_SUCCESS;
