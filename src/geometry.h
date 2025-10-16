@@ -2,6 +2,8 @@
 #define GEOMETRY_H
 #include <stdbool.h>
 #include <math.h>
+#include <stdalign.h>
+#include <immintrin.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -130,7 +132,7 @@ static inline vector3 vector3_lerp(vector3 a, vector3 b, float t) {
 }
 
 typedef struct {
-    float m[4][4];
+    alignas(16) float m[4][4];
 } matrix;
 
 static inline matrix identity_matrix(void) {
@@ -141,30 +143,6 @@ static inline matrix identity_matrix(void) {
     result.m[3][3] = 1.0f;
     return result;
 }
-
-static inline matrix matrix_multiply(matrix a, matrix b) {
-    //TODO: Optimize with SIMD
-    matrix return_value = { 0 };
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 4; ++j) {
-            for (int k = 0; k < 4; ++k) {
-                return_value.m[i][j] += a.m[i][k] * b.m[k][j];
-            }
-        }
-    }
-    return return_value;
-}
-
-// static matrix perspective_matrix(float fov_y, float aspect, float near, float far) {
-//     float f = 1.0f / tanf(fov_y / 2.0f);
-//     matrix return_value = { 0 };
-//     return_value.m[0][0] = f / aspect;
-//     return_value.m[1][1] = f;
-//     return_value.m[2][2] = (far + near) / (near - far);
-//     return_value.m[2][3] = -1.0f;
-//     return_value.m[3][2] = (2.0f * far * near) / (near - far);
-//     return return_value;
-// }
 
 static matrix view_matrix(vector3 eye, vector3 target, vector3 up) {
     vector3 zaxis = vector3_normalize(vector3_sub(target, eye));    // The "forward" vector.
@@ -195,6 +173,67 @@ static matrix view_matrix(vector3 eye, vector3 target, vector3 up) {
     return view;
 }
 
+static inline matrix translation_matrix(float tx, float ty, float tz) {
+    matrix result = identity_matrix();
+    result.m[3][0] = tx;
+    result.m[3][1] = ty;
+    result.m[3][2] = tz;
+    return result;
+}
+
+static inline matrix scaling_matrix(float sx, float sy, float sz) {
+    matrix result = { 0 };
+    result.m[0][0] = sx;
+    result.m[1][1] = sy;
+    result.m[2][2] = sz;
+    result.m[3][3] = 1.0f;
+    return result;
+}
+
+static inline matrix rotation_x_matrix(float angle_rad) {
+    matrix result = identity_matrix();
+    float c = cosf(angle_rad);
+    float s = sinf(angle_rad);
+    result.m[1][1] = c;
+    result.m[1][2] = s;
+    result.m[2][1] = -s;
+    result.m[2][2] = c;
+    return result;
+}
+
+static inline matrix rotation_y_matrix(float angle_rad) {
+    matrix result = identity_matrix();
+    float c = cosf(angle_rad);
+    float s = sinf(angle_rad);
+    result.m[0][0] = c;
+    result.m[0][2] = -s;
+    result.m[2][0] = s;
+    result.m[2][2] = c;
+    return result;
+}
+
+static inline matrix rotation_z_matrix(float angle_rad) {
+    matrix result = identity_matrix();
+    float c = cosf(angle_rad);
+    float s = sinf(angle_rad);
+    result.m[0][0] = c;
+    result.m[0][1] = s;
+    result.m[1][0] = -s;
+    result.m[1][1] = c;
+    return result;
+}
+
+static inline matrix perspective_matrix(float fov_y, float aspect, float near_plane, float far_plane) {
+    float f = 1.0f / tanf(fov_y / 2.0f);
+    matrix result = { 0 };
+    result.m[0][0] = f / aspect;
+    result.m[1][1] = f;
+    result.m[2][2] = (far_plane + near_plane) / (near_plane - far_plane);
+    result.m[2][3] = -1.0f;
+    result.m[3][2] = (2.0f * far_plane * near_plane) / (near_plane - far_plane);
+    return result;
+}
+
 static inline matrix orthographic_matrix(float left, float right, float bottom, float top, float near_plane, float far_plane) {
     matrix result = { 0 };
     float width = right - left;
@@ -210,13 +249,57 @@ static inline matrix orthographic_matrix(float left, float right, float bottom, 
     result.m[3][1] = -(top + bottom) / height;
 
     // Map z from [near, far] to [0, 1]
-    result.m[2][2] = 1.0f / depth;
-    result.m[3][2] = -near_plane / depth;
+    result.m[2][2] = -2.0f / depth;
+    result.m[3][2] = -(far_plane + near_plane) / depth;
 
     result.m[3][3] = 1.0f;
     return result;
 }
 
+static inline matrix matrix_transpose(matrix m) {
+    matrix result = { 0 };
+
+    // fast transpose using SIMD
+    __m128 row1 = _mm_load_ps(&m.m[0][0]);
+    __m128 row2 = _mm_load_ps(&m.m[1][0]);
+    __m128 row3 = _mm_load_ps(&m.m[2][0]);
+    __m128 row4 = _mm_load_ps(&m.m[3][0]);
+    _MM_TRANSPOSE4_PS(row1, row2, row3, row4);
+    _mm_store_ps(&result.m[0][0], row1);
+    _mm_store_ps(&result.m[1][0], row2);
+    _mm_store_ps(&result.m[2][0], row3);
+    _mm_store_ps(&result.m[3][0], row4);
+
+    return result;
+}
+
+static inline matrix matrix_multiply(matrix a, matrix b) {
+    matrix return_value = { 0 };
+
+    // Fast matrix multiplication using SIMD
+    // Assuming that b is transposed for better cache performance
+    __m128 b_row0 = _mm_load_ps(&b.m[0][0]);
+    __m128 b_row1 = _mm_load_ps(&b.m[1][0]);
+    __m128 b_row2 = _mm_load_ps(&b.m[2][0]);
+    __m128 b_row3 = _mm_load_ps(&b.m[3][0]);
+    for (int i = 0; i < 4; ++i) {
+        __m128 a_elem = _mm_set1_ps(a.m[i][0]);
+        __m128 res = _mm_mul_ps(a_elem, b_row0);
+
+        a_elem = _mm_set1_ps(a.m[i][1]);
+        res = _mm_add_ps(res, _mm_mul_ps(a_elem, b_row1));
+
+        a_elem = _mm_set1_ps(a.m[i][2]);
+        res = _mm_add_ps(res, _mm_mul_ps(a_elem, b_row2));
+
+        a_elem = _mm_set1_ps(a.m[i][3]);
+        res = _mm_add_ps(res, _mm_mul_ps(a_elem, b_row3));
+
+        _mm_store_ps(&return_value.m[i][0], res);
+    }
+
+    return return_value;
+}
 
 typedef struct {
     vector2 min;

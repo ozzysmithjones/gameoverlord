@@ -511,7 +511,6 @@ PS_INPUT main(VS_INPUT input) {
 
     // Use the view_proj matrix for proper transformation
     output.position = mul(float4(world_position, 0.0f, 1.0f), view_proj);
-
     output.texcoord = input.sprite_texcoord + (input.vertex_texcoord * input.sprite_src_scale);
     return output;
 }
@@ -587,11 +586,20 @@ void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int
     memset(instance, 0, sizeof(*instance));
 
     // Need to convert from pixel coordinates to normalized device coordinates (-1 to 1)
+
+    /*
     float ndc_x = ((float)position.x / (float)graphics->cached_window_size.width) * 2.0f - 1.0f;
     float ndc_y = 1.0f - ((float)position.y / (float)graphics->cached_window_size.height) * 2.0f;
     instance->position = (vector2){ ndc_x, ndc_y };
     instance->src_scale = (vector2){ (float)texscale.x / (float)graphics->sprite_sheet_size.x, (float)texscale.y / (float)graphics->sprite_sheet_size.y };
     instance->dst_scale = (vector2){ (float)scale.x / (float)graphics->cached_window_size.width * 2.0f, (float)scale.y / (float)graphics->cached_window_size.height * 2.0f };
+    instance->texcoord = (vector2){ (float)texcoord.x / (float)graphics->sprite_sheet_size.x, (float)texcoord.y / (float)graphics->sprite_sheet_size.y };
+    instance->rotation = rotation;
+    */
+
+    instance->position = position;
+    instance->src_scale = (vector2){ (float)texscale.x / (float)graphics->sprite_sheet_size.x, (float)texscale.y / (float)graphics->sprite_sheet_size.y };
+    instance->dst_scale = scale;
     instance->texcoord = (vector2){ (float)texcoord.x / (float)graphics->sprite_sheet_size.x, (float)texcoord.y / (float)graphics->sprite_sheet_size.y };
     instance->rotation = rotation;
 }
@@ -1007,11 +1015,11 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
         float blend_factor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         graphics->context->lpVtbl->OMSetBlendState(graphics->context, graphics->blend_state, blend_factor, 0xFFFFFFFF);
     }    // Use orthographic matrix for 2D rendering instead of identity
-    graphics->view_projection = identity_matrix();//orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f);
+    graphics->view_projection = matrix_transpose(orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f)); //identity_matrix();//orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f);
     return RESULT_SUCCESS;
 }
 
-static void draw_graphics(graphics* graphics, matrix view_projection) {
+static void draw_graphics(graphics* graphics) {
     ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
 
     // Update constant buffer with view-projection matrix
@@ -1021,7 +1029,7 @@ static void draw_graphics(graphics* graphics, matrix view_projection) {
         BUG("Failed to map constant buffer. HRESULT: 0x%08X", hr);
         return;
     }
-    memcpy(mapped_resource.pData, &view_projection, sizeof(matrix));
+    memcpy(mapped_resource.pData, &graphics->view_projection, sizeof(matrix));
     graphics->context->lpVtbl->Unmap(graphics->context, (ID3D11Resource*)graphics->constant_buffer, 0);
     graphics->context->lpVtbl->VSSetConstantBuffers(graphics->context, 0, 1, &graphics->constant_buffer);
 
@@ -1307,7 +1315,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             app.graphics.context->lpVtbl->Unmap(app.graphics.context, (ID3D11Resource*)app.graphics.instance_buffer, 0);
         }
 
-        draw_graphics(&app.graphics, app.graphics.view_projection);
+        draw_graphics(&app.graphics);
 
     }
 

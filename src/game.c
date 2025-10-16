@@ -29,10 +29,10 @@ __declspec(dllexport) result update(update_params* in) {
         return RESULT_FAILURE;
     }
 
-    vector2 scale = { 400, 400 };   // Large size
-    vector2int texcoord = { 0, 0 };    // Top-left of the sprite sheet
-    vector2int texscale = { 64, 64 };  // Assuming the sprite is 64x64 pixels in size
-    float rotation = 0.0f;             // No rotation
+    vector2 scale = { 160, 160 };
+    vector2int texcoord = { 0, 0 };
+    vector2int texscale = { 16, 16 };
+    float rotation = 0.0f;
 
     state->position.x += in->clock.time_since_previous_update * 1000.0f;
 
@@ -41,11 +41,8 @@ __declspec(dllexport) result update(update_params* in) {
         state->position.x = 0.0f;
     }
 
+    //draw_sprite(in->graphics, (vector2){ 0, 0 }, (vector2){ (float)display_size.x, (float)display_size.y }, (vector2int){ 0, 0 }, (vector2int){16, 16}, 0.0f);
     draw_sprite(in->graphics, state->position, scale, texcoord, texscale, rotation);
-
-    scale = (vector2){ (float)display_size.x, (float)display_size.y }; // Full screen size
-    draw_sprite(in->graphics, (vector2){ 0, 0 }, scale, (vector2int){ 0, 0 }, (vector2int){16, 16}, 0.0f);
-
 
 
     // Debug message
