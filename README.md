@@ -6,17 +6,17 @@ Simple 2D game engine written in C, with hot-reloading, memory allocators, graph
 > [!WARNING]
 > NOTE! This project is in very early alpha development, so there might be frequent changes and bugs. 
 
-# Project Structure
+## Project Structure
 
 The project source code is devided into two halves. The "engine" folder contains all of the code necessary to run your game, including a platform layer, which wraps platform-specific code. Currently this game engine only supports Windows platform, but other platforms might be supported in the future. The "game" folder is where you can put your game code. The CMakeLists.txt at the root of the project is set up for hot-reloading. You can code your game while it is still running, and when you hit build in your editor (if hot reloading is enabled) you will see the program instantly refresh on screen with your changes (this hot-reloading feature can save you a bunch of time, as normally you would have to close and re-open the program to see the changes).
 
+## Hot-Reloading
 
 For hot-reloading to work, the game engine looks for three specific functions in your game code. You must provide an init() function, an update() function and a shutdown() function. The game engine will call your init() code when the game starts up, update() every frame, and shutdown() when your game shuts down. If the game hot-reloads, then it will keep using the same game state, but the functions will be refreshed, using the newer update() and shutdown() functions instead of the old ones. Keep in mind that any dynamically-allocated persistent state will still persist the same way after a hot-reload, so don't add or remove variables from any persistent state, the old memory layout will still be used). If you want to change memory layouts from game state, then re-building and re-starting the program is probably the best idea. Use hot-reload only for changing values, adding/removing variables on the stack/in static memory (these don't persist), or changing code. 
 
-
 If hot-reload is enabled, your game is compiled as a dynamically linked library and linked with the engine at runtime (dynamically linked libraries can re-loaded). If hot-reload is disabled, instead your game and engine is compiled together (linked statically) to maximize performance. Having the engine folder and the game folder side by side in a single project lets you step through the game and the engine source code whenever you need to. 
 
-# Example
+## Example
 
 Below, you can see an example of how you could implement the three functions for your game. Every function has some useful input parameters. There are no global variables in this game engine. This makes it possible to trace where values are used and passed around. 
 
@@ -76,15 +76,15 @@ __declspec(dllexport) void shutdown(shutdown_params* in) {
 }
 ```
 
-# Memory Management
+## Memory Management
 
 You will note that there is no call to free() anywhere in this code, that is because the game engine already frees the arena-allocators at certain points. No need to call free()/reset_bump_allocator() yourself! Anything allocated with the permanent allocator is freed at the end of the program, and anything allocated with the temp allocator will be freed at the end of each frame. Internally, an arena is just a pointer pointing to a block of memory. When you call "bump_allocate" the pointer is bumped forward (commiting more memory from the operating system as needed) When you call reset_bump_allocator() the pointer is reset back to the beginning of the block. Each Arena is implemented in this program using one continuous block of reserved virtual memory (1 GB by default for the permanent allocator, and 64 MB for the temp).
 
-# Asset Management
+## Asset Management
 
 For now, the game engine just searches for the first .png file in the executable's directory, and uses that as a spritesheet to render your games sprites. 
 
-# Error Handling
+## Error Handling
 
 This game engine uses a unique approach to error handling where there is a different strategy depending on the build of your program. If you are building a debug/development build, any error results in an immediate breakpoint with a handy error message (failing fast): 
 
