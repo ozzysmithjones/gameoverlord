@@ -43,6 +43,11 @@ __declspec(dllexport) result update(update_params* in) {
 
     draw_sprite(in->graphics, state->position, scale, texcoord, texscale, rotation);
 
+    scale = (vector2){ (float)display_size.x, (float)display_size.y }; // Full screen size
+    draw_sprite(in->graphics, (vector2){ 0, 0 }, scale, (vector2int){ 0, 0 }, (vector2int){16, 16}, 0.0f);
+
+
+
     // Debug message
     printf("Game update: Drew sprite at position: (%f, %f) with scale: (%f, %f)\n",
         state->position.x, state->position.y, scale.x, scale.y);

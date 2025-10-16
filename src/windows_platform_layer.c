@@ -488,7 +488,8 @@ struct VS_INPUT {
     // Instance data
     float2 sprite_position : SPRITE_POSITION;
     float2 sprite_texcoord : SPRITE_TEXCOORD;
-    float2 sprite_scale : SPRITE_SCALE;
+    float2 sprite_src_scale : SPRITE_SRC_SCALE;
+    float2 sprite_dst_scale : SPRITE_DST_SCALE;
     float sprite_rotation : SPRITE_ROTATION;
 };
 
@@ -505,13 +506,13 @@ PS_INPUT main(VS_INPUT input) {
         input.vertex_position.x * cos_theta - input.vertex_position.y * sin_theta,
         input.vertex_position.x * sin_theta + input.vertex_position.y * cos_theta
     );
-    float2 scaled_position = rotated_position * input.sprite_scale;
+    float2 scaled_position = rotated_position * input.sprite_dst_scale;
     float2 world_position = scaled_position + input.sprite_position;
 
     // Use the view_proj matrix for proper transformation
     output.position = mul(float4(world_position, 0.0f, 1.0f), view_proj);
 
-    output.texcoord = input.sprite_texcoord + (input.vertex_texcoord * input.sprite_scale);
+    output.texcoord = input.sprite_texcoord + (input.vertex_texcoord * input.sprite_src_scale);
     return output;
 }
 ));
@@ -537,7 +538,8 @@ float4 main(PS_INPUT input) : SV_TARGET{
 typedef struct {
     vector2 position;
     vector2 texcoord;
-    vector2 scale;
+    vector2 src_scale;
+    vector2 dst_scale;
     float rotation;
 } sprite_instance;
 
@@ -582,14 +584,14 @@ void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int
 
     sprite_instance* instance = &graphics->sprite_instances.elements[graphics->sprite_instances.count];
     ++graphics->sprite_instances.count;
-
     memset(instance, 0, sizeof(*instance));
 
     // Need to convert from pixel coordinates to normalized device coordinates (-1 to 1)
     float ndc_x = ((float)position.x / (float)graphics->cached_window_size.width) * 2.0f - 1.0f;
     float ndc_y = 1.0f - ((float)position.y / (float)graphics->cached_window_size.height) * 2.0f;
     instance->position = (vector2){ ndc_x, ndc_y };
-    instance->scale = (vector2){ (float)scale.x / (float)graphics->cached_window_size.width * 2.0f, (float)scale.y / (float)graphics->cached_window_size.height * 2.0f };
+    instance->src_scale = (vector2){ (float)texscale.x / (float)graphics->sprite_sheet_size.x, (float)texscale.y / (float)graphics->sprite_sheet_size.y };
+    instance->dst_scale = (vector2){ (float)scale.x / (float)graphics->cached_window_size.width * 2.0f, (float)scale.y / (float)graphics->cached_window_size.height * 2.0f };
     instance->texcoord = (vector2){ (float)texcoord.x / (float)graphics->sprite_sheet_size.x, (float)texcoord.y / (float)graphics->sprite_sheet_size.y };
     instance->rotation = rotation;
 }
@@ -758,8 +760,9 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
                 // Instance data`
                 { "SPRITE_POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 0, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
                 { "SPRITE_TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 8, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
-                { "SPRITE_SCALE", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
-                { "SPRITE_ROTATION", 0, DXGI_FORMAT_R32_FLOAT, 1, 24, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+                { "SPRITE_SRC_SCALE", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+                { "SPRITE_DST_SCALE", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 24, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+                { "SPRITE_ROTATION", 0, DXGI_FORMAT_R32_FLOAT, 1, 32, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
             };
 
             // Check shader blob is valid before using
@@ -829,18 +832,18 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
         }
     }
 
-    // Vertex buffer for a unit quad (two triangles):
+    // Vertex buffer for a quad (two triangles):
     {
-        // A unit quad centered at the origin, with texture coordinates from (0,0) to (1,1)
+
         float vertex_data[] = {
             // Position      // TexCoord
-            -0.5f, -0.5f,   0.0f, 1.0f,
-             0.5f, -0.5f,   1.0f, 1.0f,
-             0.5f,  0.5f,   1.0f, 0.0f,
+            -1.0f, -1.0f,   0.0f, 1.0f,
+             1.0f, -1.0f,   1.0f, 1.0f,
+             1.0f,  1.0f,   1.0f, 0.0f,
 
-            -0.5f, -0.5f,   0.0f, 1.0f,
-             0.5f,  0.5f,   1.0f, 0.0f,
-            -0.5f,  0.5f,   0.0f, 0.0f,
+            -1.0f, -1.0f,   0.0f, 1.0f,
+             1.0f,  1.0f,   1.0f, 0.0f,
+            -1.0f,  1.0f,   0.0f, 0.0f,
         };
 
         D3D11_BUFFER_DESC buffer_desc = { 0 };
