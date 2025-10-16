@@ -10,22 +10,19 @@ set(CMAKE_C_STANDARD_REQUIRED OFF)
 # "src/*.h"
 # )
 
-SET(COMMON_SOURCES
-    src/fundamental.h
-    src/geometry.h 
-    src/platform_layer.h 
-    src/windows_platform_layer.c 
-    src/stb_image.h
-   )
-SET(ENGINE_SOURCES
-    ${COMMON_SOURCES}
-   )
-SET(GAME_SOURCES
-    ${COMMON_SOURCES}
-    src/game.c
-    src/game.h
+SET(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/engine)
+file(GLOB_RECURSE ENGINE_SOURCES 
+    ${ENGINE_DIR}/*.c
+    ${ENGINE_DIR}/*.h
    )
 
+
+SET(GAME_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/game)
+SET(GAME_SOURCES
+    ${ENGINE_SOURCES}
+    ${GAME_DIR}/game.c
+    ${GAME_DIR}/game.h
+   )
 
 SET(HOT_RELOAD ON)
 
@@ -35,6 +32,7 @@ if(HOT_RELOAD)
     target_link_libraries(engine d3d11 dxgi d3dcompiler)
     
     add_library(game SHARED ${GAME_SOURCES})
+    target_include_directories(game PRIVATE ${ENGINE_DIR})
     
     # Disable PDB generation so that it doesn't interfere with hot-reloading
     set_target_properties(game PROPERTIES
@@ -47,5 +45,6 @@ if(HOT_RELOAD)
 else()
     add_executable(game WIN32 ${GAME_SOURCES})
     target_compile_definitions(game PRIVATE APP_BACKEND)
+    target_include_directories(game PRIVATE ${ENGINE_DIR})
     target_link_libraries(game d3d11 dxgi d3dcompiler)
 endif()

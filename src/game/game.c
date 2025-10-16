@@ -2,7 +2,6 @@
 #include "geometry.h"
 #include "platform_layer.h"
 
-
 typedef struct {
     vector2 position;
     int placeholder;
@@ -14,6 +13,7 @@ __declspec(dllexport) result init(init_in_params* in, init_out_params* out) {
         BUG("Failed to allocate memory for game state.");
         return RESULT_FAILURE;
     }
+
     memset(state, 0, sizeof(game_state));
     out->user_state = state;
     out->virtual_resolution = (vector2int){ 600, 400 };
@@ -31,10 +31,8 @@ __declspec(dllexport) result update(update_params* in) {
 
     vector2 scale = { 160, 160 };
     vector2int texcoord = { 0, 0 };
-    vector2int texscale = { 16, 16 };
+    vector2int texscale = { 32, 32 };
     float rotation = 0.0f;
-
-    //state->position.x += in->clock.time_since_previous_update * 1000.0f;
 
     vector2int display_size = get_virtual_resolution(in->graphics);
     if (state->position.x > (float)display_size.x) {
@@ -42,6 +40,7 @@ __declspec(dllexport) result update(update_params* in) {
     }
 
     draw_sprite(in->graphics, state->position, scale, texcoord, texscale, rotation);
+
     return RESULT_SUCCESS;
 }
 
