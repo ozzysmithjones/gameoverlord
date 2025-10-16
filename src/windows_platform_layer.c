@@ -1180,10 +1180,8 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
         shutdown = NULL;
     }
 
-    // Copy the DLL to a temporary file to avoid locking issues
-    if (!CopyFileA(HOT_RELOAD_DLL_PATH, HOT_RELOAD_DLL_TEMP_PATH, FALSE)) {
-        BUG("Failed to copy %s to %s", HOT_RELOAD_DLL_PATH, HOT_RELOAD_DLL_TEMP_PATH);
-        return false;
+    while (!CopyFileA(HOT_RELOAD_DLL_PATH, HOT_RELOAD_DLL_TEMP_PATH, FALSE)) {
+        Sleep(100);
     }
 
     app_dll = LoadLibraryA(HOT_RELOAD_DLL_TEMP_PATH);

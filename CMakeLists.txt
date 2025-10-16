@@ -26,14 +26,24 @@ SET(GAME_SOURCES
     src/game.h
    )
 
-# Update executable with source files
+
 SET(HOT_RELOAD ON)
 
 if(HOT_RELOAD)
     add_executable(engine WIN32 ${ENGINE_SOURCES})
     target_compile_definitions(engine PRIVATE APP_BACKEND HOT_RELOAD_HOST)
     target_link_libraries(engine d3d11 dxgi d3dcompiler)
+    
     add_library(game SHARED ${GAME_SOURCES})
+    
+    # Disable PDB generation so that it doesn't interfere with hot-reloading
+    set_target_properties(game PROPERTIES
+        COMPILE_PDB_NAME ""
+        COMPILE_PDB_OUTPUT_DIRECTORY ""
+        PDB_NAME ""
+        PDB_OUTPUT_DIRECTORY "")
+            
+    target_link_options(game PRIVATE "/DEBUG:NONE")
 else()
     add_executable(game WIN32 ${GAME_SOURCES})
     target_compile_definitions(game PRIVATE APP_BACKEND)

@@ -34,7 +34,7 @@ __declspec(dllexport) result update(update_params* in) {
     vector2int texscale = { 16, 16 };
     float rotation = 0.0f;
 
-    state->position.x += in->clock.time_since_previous_update * 1000.0f;
+    //state->position.x += in->clock.time_since_previous_update * 1000.0f;
 
     vector2int display_size = get_virtual_resolution(in->graphics);
     if (state->position.x > (float)display_size.x) {
