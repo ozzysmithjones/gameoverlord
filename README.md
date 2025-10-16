@@ -103,7 +103,7 @@ This strategy allows the code to be fault-tolerant in release-mode, but fail-fas
 
 For now - Just clone the project and make the game in the src/game directory. In the future it might be possible to make a script/editor that generates projects, but for now just use the existing CMakeLists.txt at the root of the project. It should be good enough to gather all of the source files automatically and enable hot-reloading for you. 
 
-The only dependencies that this project depends on is CMake and the Windows operating system. 
+The only dependencies that this project depends on is CMake and the Windows operating system (which includes the Windows API and DirectX11). 
 
 
 
