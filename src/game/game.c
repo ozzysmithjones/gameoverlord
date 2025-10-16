@@ -33,5 +33,5 @@ __declspec(dllexport) result update(update_params* in) {
 }
 
 __declspec(dllexport) void shutdown(shutdown_params* in) {
-
+    
 }
