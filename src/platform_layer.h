@@ -70,8 +70,8 @@ typedef struct {
 /// @param scale The scale of the sprite in pixels, used both for the scale on screen and the size of the sprite to sample from the sprite sheet.
 /// @param texcoord The texture coordinates of the sprite in pixels, where (0,0) is the top-left of the sprite sheet.
 void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int texcoord, vector2int texscale, float rotation);
-vector2int get_display_size(graphics* graphics);
-
+vector2int get_actual_resolution(graphics* graphics);
+vector2int get_virtual_resolution(graphics* graphics);
 // =============================================================
 // User Input
 // =============================================================
@@ -255,7 +255,7 @@ void wait_condition_variable(condition_variable* cv, mutex* m);
 // =============================================================
 
 typedef struct {
-    void* app_state;
+    void* user_state;
     graphics* graphics;
     memory_allocators* memory_allocators;
     input* input;
@@ -263,7 +263,7 @@ typedef struct {
 } update_params;
 
 typedef struct {
-    void* app_state;
+    void* user_state;
     memory_allocators* memory_allocators;
 } shutdown_params;
 
@@ -272,7 +272,15 @@ typedef struct {
 } init_in_params;
 
 typedef struct {
-    void* app_state;
+    void* user_state;
+
+    /*
+    Modern computers are much higher resolution than older games were designed for.
+    If you want to make a pixel-art game, drawing the pixel art at the actual resolution would make them look tiny.
+    To solve this, we introduce the concept of a "virtual resolution", which is the resolution that the game thinks it's drawing to, but it's actually scaled up to the real size of your screen.
+    You need to provide your desired virtual resolution here and the platform layer will handle the rest (scaling up while keeping the aspect ratio the same, letterboxing as needed and so on).
+    */
+    vector2int virtual_resolution;
 } init_out_params;
 
 #endif // PLATFORM_LAYER_H

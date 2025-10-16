@@ -42,6 +42,10 @@ extern result init(init_in_params* in, init_out_params* out);
 extern result update(update_params* in);
 extern void shutdown(shutdown_params* in);
 #endif // HOT_RELOAD_HOST
+#else
+result init(init_in_params* in, init_out_params* out);
+result update(update_params* in);
+void shutdown(shutdown_params* in);
 #endif // APP_BACKEND
 
 result create_bump_allocator(bump_allocator* allocator, size_t capacity) {
@@ -572,39 +576,32 @@ typedef struct graphics {
     ID3D11Buffer* constant_buffer;
     matrix view_projection;
     sprite_instances sprite_instances;
+    vector2int virtual_resolution;
+    D3D11_VIEWPORT viewport;
 } graphics;
 
 void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int texcoord, vector2int texscale, float rotation) {
     ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
-    if (graphics->sprite_instances.count >= MAX_SPRITES) {
-        BUG("Exceeded maximum number of sprites per frame (%d). Increase MAX_SPRITES or reduce draw calls.", MAX_SPRITES);
-        return;
-    }
+    ASSERT(graphics->sprite_instances.elements != NULL, return, "Sprite instances array not initialized");
+    ASSERT(graphics->sprite_instances.count < MAX_SPRITES, return, "Exceeded maximum number of sprites per frame (either increase MAX_SPRITES or draw less sprites per frame)");
 
     sprite_instance* instance = &graphics->sprite_instances.elements[graphics->sprite_instances.count];
     ++graphics->sprite_instances.count;
-    memset(instance, 0, sizeof(*instance));
-
-    // Need to convert from pixel coordinates to normalized device coordinates (-1 to 1)
-
-    /*
-    float ndc_x = ((float)position.x / (float)graphics->cached_window_size.width) * 2.0f - 1.0f;
-    float ndc_y = 1.0f - ((float)position.y / (float)graphics->cached_window_size.height) * 2.0f;
-    instance->position = (vector2){ ndc_x, ndc_y };
-    instance->src_scale = (vector2){ (float)texscale.x / (float)graphics->sprite_sheet_size.x, (float)texscale.y / (float)graphics->sprite_sheet_size.y };
-    instance->dst_scale = (vector2){ (float)scale.x / (float)graphics->cached_window_size.width * 2.0f, (float)scale.y / (float)graphics->cached_window_size.height * 2.0f };
-    instance->texcoord = (vector2){ (float)texcoord.x / (float)graphics->sprite_sheet_size.x, (float)texcoord.y / (float)graphics->sprite_sheet_size.y };
-    instance->rotation = rotation;
-    */
-
     instance->position = position;
-    instance->src_scale = (vector2){ (float)texscale.x / (float)graphics->sprite_sheet_size.x, (float)texscale.y / (float)graphics->sprite_sheet_size.y };
     instance->dst_scale = scale;
+    instance->src_scale = (vector2){ (float)texscale.x / (float)graphics->sprite_sheet_size.x, (float)texscale.y / (float)graphics->sprite_sheet_size.y };
     instance->texcoord = (vector2){ (float)texcoord.x / (float)graphics->sprite_sheet_size.x, (float)texcoord.y / (float)graphics->sprite_sheet_size.y };
     instance->rotation = rotation;
 }
 
-vector2int get_display_size(graphics* graphics) {
+vector2int get_virtual_resolution(graphics* graphics) {
+    ASSERT(graphics != NULL, return ((vector2int) {
+        0, 0
+    }), "Graphics pointer cannot be NULL");
+    return graphics->virtual_resolution;
+}
+
+vector2int get_actual_resolution(graphics* graphics) {
     ASSERT(graphics != NULL, return ((vector2int) {
         0, 0
     }), "Graphics pointer cannot be NULL");
@@ -656,7 +653,7 @@ static result compile_shader(const char* code, size_t code_length, LPCSTR shader
     return RESULT_SUCCESS;
 }
 
-static result create_graphics(window* window, bump_allocator* temp_allocator, graphics* graphics) {
+static result create_graphics(window* window, vector2int virtual_resolution, bump_allocator* temp_allocator, graphics* graphics) {
     ASSERT(window != NULL, return RESULT_FAILURE, "Window pointer cannot be NULL");
     ASSERT(graphics != NULL, return RESULT_FAILURE, "Graphics pointer cannot be NULL");
     memset(graphics, 0, sizeof(*graphics));
@@ -732,12 +729,32 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
     }
     // Set viewport:
     {
-        D3D11_VIEWPORT viewport = { 0 };
-        viewport.TopLeftX = 0;
-        viewport.TopLeftY = 0;
-        viewport.Width = (FLOAT)size.width;
-        viewport.Height = (FLOAT)size.height;
-        graphics->context->lpVtbl->RSSetViewports(graphics->context, 1, &viewport);
+        graphics->virtual_resolution = virtual_resolution;
+        float desired_aspect_ratio = (float)virtual_resolution.x / (float)virtual_resolution.y;
+        float window_aspect_ratio = (float)size.width / (float)size.height;
+
+        if (desired_aspect_ratio > window_aspect_ratio) {
+            // Bars on top and bottom
+            float viewport_height = ((float)size.width / desired_aspect_ratio);
+            graphics->viewport = (D3D11_VIEWPORT){
+                0, (size.height - viewport_height) / 2, (float)size.width, viewport_height
+            };
+        }
+        else if (desired_aspect_ratio < window_aspect_ratio) {
+            // Bars on left and right
+            float viewport_width = ((float)size.height * desired_aspect_ratio);
+            graphics->viewport = (D3D11_VIEWPORT){
+                (size.width - viewport_width) / 2, 0, viewport_width, (float)size.height
+            };
+        }
+        else {
+            // No bars
+            graphics->viewport = (D3D11_VIEWPORT){
+                0, 0, (float)size.width, (float)size.height
+            };
+        }
+
+        graphics->context->lpVtbl->RSSetViewports(graphics->context, 1, &graphics->viewport);
     }
     // Vertex shader:
     {
@@ -1015,7 +1032,7 @@ static result create_graphics(window* window, bump_allocator* temp_allocator, gr
         float blend_factor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         graphics->context->lpVtbl->OMSetBlendState(graphics->context, graphics->blend_state, blend_factor, 0xFFFFFFFF);
     }    // Use orthographic matrix for 2D rendering instead of identity
-    graphics->view_projection = matrix_transpose(orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f)); //identity_matrix();//orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f);
+    graphics->view_projection = matrix_transpose(orthographic_matrix(0.0f, (float)virtual_resolution.x, (float)virtual_resolution.y, 0.0f, -1.0f, 1.0f)); //identity_matrix();//orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f);
     return RESULT_SUCCESS;
 }
 
@@ -1125,7 +1142,6 @@ static void destroy_graphics(graphics* graphics) {
     memset(graphics, 0, sizeof(*graphics));
 }
 
-
 #ifdef HOT_RELOAD_HOST
 static HMODULE app_dll = NULL;
 
@@ -1195,7 +1211,7 @@ static struct {
     window window;
     graphics graphics;
     clock clock;
-    void* app_state;
+    void* user_state;
 } app; // <- this static variable is only used globally in WinMain, create_app() and destroy_app() (but it's members may be passed to function calls)
 
 static result create_app(void) {
@@ -1228,18 +1244,18 @@ static result create_app(void) {
         return RESULT_FAILURE;
     }
 
-    if (create_graphics(&app.window, &app.memory_allocators.temp_allocator, &app.graphics) != RESULT_SUCCESS) {
+    if (create_graphics(&app.window, out_params.virtual_resolution, &app.memory_allocators.temp_allocator, &app.graphics) != RESULT_SUCCESS) {
         BUG("Failed to create graphics context.");
         return RESULT_FAILURE;
     }
 
-    app.app_state = out_params.app_state;
+    app.user_state = out_params.user_state;
     return RESULT_SUCCESS;
 }
 
 static void destroy_app(void) {
     shutdown_params shutdown_params = { 0 };
-    shutdown_params.app_state = app.app_state;
+    shutdown_params.user_state = app.user_state;
     shutdown_params.memory_allocators = &app.memory_allocators;
     shutdown(&shutdown_params);
 
@@ -1290,7 +1306,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             HRESULT hr = app.graphics.context->lpVtbl->Map(app.graphics.context, (ID3D11Resource*)app.graphics.instance_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &app.graphics.instance_buffer_mapping);
             if (FAILED(hr)) {
                 BUG("Failed to map instance buffer. HRESULT: 0x%08X", hr);
-                return -1;
+                goto cleanup;
             }
 
             app.graphics.sprite_instances.elements = (sprite_instance*)app.graphics.instance_buffer_mapping.pData;
@@ -1303,7 +1319,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             update_params.graphics = &app.graphics;
             update_params.memory_allocators = &app.memory_allocators;
             update_params.input = input_state;
-            update_params.app_state = app.app_state;
+            update_params.user_state = app.user_state;
 
             if (update(&update_params) != RESULT_SUCCESS) {
                 BUG("Failed to update app.");
@@ -1316,7 +1332,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         }
 
         draw_graphics(&app.graphics);
-
     }
 
 cleanup:
