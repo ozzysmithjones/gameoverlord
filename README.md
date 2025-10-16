@@ -2,7 +2,6 @@
 
 Simple 2D game engine written in C, with hot-reloading, memory allocators, graphics and user input. You can use this to make 2D games like super-mario or asteroids. 
 
-
 > [!WARNING]
 > NOTE! This project is in very early alpha development, so there might be frequent changes and bugs. 
 
@@ -103,7 +102,7 @@ This strategy allows the code to be fault-tolerant in release-mode, but fail-fas
 
 For now - Just clone the project and make the game in the src/game directory. In the future it might be possible to make a script/editor that generates projects, but for now just use the existing CMakeLists.txt at the root of the project. It should be good enough to gather all of the source files automatically and enable hot-reloading for you. 
 
-The only dependencies that this project depends on is CMake and the Windows operating system (which includes the Windows API and DirectX11). 
+The only dependencies that this project depends on is CMake, stb_image.h (for loading PNG files, included with the source code) and the Windows operating system (which includes the Windows API and DirectX11). 
 
 
 
