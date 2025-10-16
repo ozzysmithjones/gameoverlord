@@ -13,37 +13,25 @@ __declspec(dllexport) result init(init_in_params* in, init_out_params* out) {
         BUG("Failed to allocate memory for game state.");
         return RESULT_FAILURE;
     }
-
-    memset(state, 0, sizeof(game_state));
+    
+    // These values must be filled in during init.
+    // The state that you want to persist, and the virtual resolution of your screen that you want to target.
+    // The game engine will manage scaling up to the actual screen resolution, keeping the aspect ratio the same and letterboxing as needed.
     out->user_state = state;
-    out->virtual_resolution = (vector2int){ 600, 400 };
+    out->virtual_resolution.x = 800;
+    out->virtual_resolution.y = 600;
 
-    puts("Hello from game init!");
     return RESULT_SUCCESS;
 }
 
 __declspec(dllexport) result update(update_params* in) {
     game_state* state = (game_state*)in->user_state;
-    if (state == NULL) {
-        BUG("User state is NULL in update.");
-        return RESULT_FAILURE;
-    }
 
-    vector2 scale = { 160, 160 };
-    vector2int texcoord = { 0, 0 };
-    vector2int texscale = { 32, 32 };
-    float rotation = 0.0f;
-
-    vector2int display_size = get_virtual_resolution(in->graphics);
-    if (state->position.x > (float)display_size.x) {
-        state->position.x = 0.0f;
-    }
-
-    draw_sprite(in->graphics, state->position, scale, texcoord, texscale, rotation);
+    // Game logic would go here
 
     return RESULT_SUCCESS;
 }
 
 __declspec(dllexport) void shutdown(shutdown_params* in) {
-    puts("Hello from game shutdown!");
+
 }
