@@ -2,8 +2,9 @@
 
 Simple 2D game engine written in C, with hot-reloading, memory allocators, graphics and user input. You can use this to make 2D games like super-mario or asteroids. 
 
-[!WARNING]  
-NOTE! This project is in very early alpha development, so there might be frequent changes and bugs. 
+
+> [!WARNING]
+> NOTE! This project is in very early alpha development, so there might be frequent changes and bugs. 
 
 # Project Structure
 
