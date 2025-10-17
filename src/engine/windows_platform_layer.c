@@ -9,8 +9,7 @@
 #include <d3dcompiler.h>
 
 // Audio API:
-// TODO: add audio
-//#include <xaudio2.h>
+#include <xaudio2.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -49,6 +48,12 @@ result init(init_in_params* in, init_out_params* out);
 result update(update_params* in);
 void shutdown(shutdown_params* in);
 #endif // GAME_LOOP
+
+/*
+=============================================================================================================================
+    Memory Allocation
+=============================================================================================================================
+*/
 
 result create_bump_allocator(bump_allocator* allocator, size_t capacity) {
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
@@ -103,6 +108,12 @@ void* bump_allocate(bump_allocator* allocator, size_t alignment, size_t bytes) {
     return (LPBYTE)allocator->base + aligned;
 }
 
+/*
+=============================================================================================================================
+    Time
+=============================================================================================================================
+*/
+
 result create_clock(clock* clock) {
     ASSERT(clock != NULL, return RESULT_FAILURE, "Clock cannot be NULL");
 
@@ -140,6 +151,13 @@ void update_clock(clock* clock) {
     clock->time_since_creation = current_time_seconds - clock->creation_time;
     clock->previous_update_time = current_time_seconds;
 }
+
+
+/*
+=============================================================================================================================
+    File I/O
+=============================================================================================================================
+*/
 
 string get_executable_directory(bump_allocator* allocator) {
     char* path = (char*)bump_allocate(allocator, 1, MAX_PATH);
@@ -270,6 +288,13 @@ result write_entire_file(string path, const void* data, size_t size) {
     CloseHandle(file_handle);
     return RESULT_SUCCESS;
 }
+
+
+/*
+=============================================================================================================================
+    Window
+=============================================================================================================================
+*/
 
 typedef struct input {
     uint64_t keys_pressed_bitset[4];
@@ -427,6 +452,12 @@ static window_size get_window_size(window* window) {
     };
 }
 
+/*
+=============================================================================================================================
+    Input
+=============================================================================================================================
+*/
+
 static input* update_window_input(window* window) {
     ASSERT(window != NULL, return NULL, "Window pointer cannot be NULL");
     input* input_state = &window->input_state;
@@ -538,6 +569,12 @@ float4 main(PS_INPUT input) : SV_TARGET{
 ));
 
 #pragma endregion
+
+/*
+=============================================================================================================================
+    Graphics
+=============================================================================================================================
+*/
 
 typedef struct {
     vector2 position;
@@ -653,6 +690,8 @@ static result compile_shader(const char* code, size_t code_length, LPCSTR shader
     *out_blob = shader_blob;
     return RESULT_SUCCESS;
 }
+
+
 
 static result create_graphics(window* window, vector2int virtual_resolution, bump_allocator* temp, graphics* graphics) {
     ASSERT(window != NULL, return RESULT_FAILURE, "Window pointer cannot be NULL");
@@ -1143,6 +1182,13 @@ static void destroy_graphics(graphics* graphics) {
     memset(graphics, 0, sizeof(*graphics));
 }
 
+/*
+=============================================================================================================================
+    Hot Reload
+=============================================================================================================================
+*/
+
+
 #ifdef HOT_RELOAD_HOST
 static HMODULE app_dll = NULL;
 
@@ -1205,68 +1251,11 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
 
 #endif // HOT_RELOAD_HOST
 
-static struct {
-    memory_allocators memory_allocators;
-    window window;
-    graphics graphics;
-    clock clock;
-    void* game_state;
-} game; // <- this static variable is only used globally in WinMain, create_game() and destroy_game() (but it's members may be passed to function calls)
-
-static result create_game(void) {
-    if (create_clock(&game.clock) != RESULT_SUCCESS) {
-        BUG("Failed to create application clock (for measuring delta time).");
-        return RESULT_FAILURE;
-    }
-
-    if (create_bump_allocator(&game.memory_allocators.perm, 1024 * 1024 * 1024) != RESULT_SUCCESS) {
-        BUG("Failed to create permanent memory allocator.");
-        return RESULT_FAILURE;
-    }
-
-    if (create_bump_allocator(&game.memory_allocators.temp, 64 * 1024 * 1024) != RESULT_SUCCESS) {
-        BUG("Failed to create temporary memory allocator.");
-        return RESULT_FAILURE;
-    }
-
-    if (create_window(&game.window, "Game Overlord", 1280, 720, WINDOW_MODE_WINDOWED) != RESULT_SUCCESS) {
-        BUG("Failed to create application window.");
-        return RESULT_FAILURE;
-    }
-
-    init_in_params in_params = { 0 };
-    in_params.memory_allocators = &game.memory_allocators;
-    init_out_params out_params = { 0 };
-
-    if (init(&in_params, &out_params) != RESULT_SUCCESS) {
-        BUG("Failed to initialize app.");
-        return RESULT_FAILURE;
-    }
-
-    if (create_graphics(&game.window, out_params.virtual_resolution, &game.memory_allocators.temp, &game.graphics) != RESULT_SUCCESS) {
-        BUG("Failed to create graphics context.");
-        return RESULT_FAILURE;
-    }
-
-    game.game_state = out_params.game_state;
-    return RESULT_SUCCESS;
-}
-
-static void destroy_game(void) {
-    shutdown_params shutdown_params = { 0 };
-    shutdown_params.game_state = game.game_state;
-    shutdown_params.memory_allocators = &game.memory_allocators;
-    shutdown(&shutdown_params);
-
-    destroy_graphics(&game.graphics);
-    destroy_window(&game.window);
-    destroy_bump_allocator(&game.memory_allocators.perm);
-    destroy_bump_allocator(&game.memory_allocators.temp);
-
-#ifdef HOT_RELOAD_HOST
-    FreeLibrary(app_dll);
-#endif
-}
+/*
+=============================================================================================================================
+    Multi-threading
+=============================================================================================================================
+*/
 
 STATIC_ASSERT((sizeof(mutex) == sizeof(HANDLE)), mutex_size_must_match_handle_size);
 STATIC_ASSERT((alignof(mutex) >= alignof(HANDLE)), mutex_alignment_must_match_handle_alignment);
@@ -1276,6 +1265,7 @@ result create_mutex(mutex* m) {
     HANDLE* handle = (HANDLE*)m->internals;
     *handle = CreateMutexA(NULL, FALSE, NULL);
     ASSERT(*handle != NULL, return RESULT_FAILURE, "Failed to create mutex");
+    return RESULT_SUCCESS;
 }
 
 result lock_mutex(mutex* m) {
@@ -1358,6 +1348,76 @@ result wait_condition_variable(condition_variable* cv, mutex* m) {
     SleepConditionVariableCS((PCONDITION_VARIABLE)cv->internals, (PCRITICAL_SECTION)m->internals, INFINITE);
     return RESULT_SUCCESS;
 }
+
+/*
+=============================================================================================================================
+    Game Loop
+=============================================================================================================================
+*/
+
+static struct {
+    memory_allocators memory_allocators;
+    window window;
+    graphics graphics;
+    clock clock;
+    void* game_state;
+} game; // <- this static variable is only used globally in WinMain, create_game() and destroy_game() (but it's members may be passed to function calls)
+
+static result create_game(void) {
+    if (create_clock(&game.clock) != RESULT_SUCCESS) {
+        BUG("Failed to create application clock (for measuring delta time).");
+        return RESULT_FAILURE;
+    }
+
+    if (create_bump_allocator(&game.memory_allocators.perm, 1024 * 1024 * 1024) != RESULT_SUCCESS) {
+        BUG("Failed to create permanent memory allocator.");
+        return RESULT_FAILURE;
+    }
+
+    if (create_bump_allocator(&game.memory_allocators.temp, 64 * 1024 * 1024) != RESULT_SUCCESS) {
+        BUG("Failed to create temporary memory allocator.");
+        return RESULT_FAILURE;
+    }
+
+    if (create_window(&game.window, "Game Overlord", 1280, 720, WINDOW_MODE_WINDOWED) != RESULT_SUCCESS) {
+        BUG("Failed to create application window.");
+        return RESULT_FAILURE;
+    }
+
+    init_in_params in_params = { 0 };
+    in_params.memory_allocators = &game.memory_allocators;
+    init_out_params out_params = { 0 };
+
+    if (init(&in_params, &out_params) != RESULT_SUCCESS) {
+        BUG("Failed to initialize app.");
+        return RESULT_FAILURE;
+    }
+
+    if (create_graphics(&game.window, out_params.virtual_resolution, &game.memory_allocators.temp, &game.graphics) != RESULT_SUCCESS) {
+        BUG("Failed to create graphics context.");
+        return RESULT_FAILURE;
+    }
+
+    game.game_state = out_params.game_state;
+    return RESULT_SUCCESS;
+}
+
+static void destroy_game(void) {
+    shutdown_params shutdown_params = { 0 };
+    shutdown_params.game_state = game.game_state;
+    shutdown_params.memory_allocators = &game.memory_allocators;
+    shutdown(&shutdown_params);
+
+    destroy_graphics(&game.graphics);
+    destroy_window(&game.window);
+    destroy_bump_allocator(&game.memory_allocators.perm);
+    destroy_bump_allocator(&game.memory_allocators.temp);
+
+#ifdef HOT_RELOAD_HOST
+    FreeLibrary(app_dll);
+#endif
+}
+
 
 #ifdef GAME_LOOP
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
