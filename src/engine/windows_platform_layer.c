@@ -7,16 +7,18 @@
 #define INITGUID
 #include <d3d11_1.h>
 #include <d3dcompiler.h>
-// #include <directxmath.h>
-// #include <directxcolors.h>
+
+// Audio API:
+// TODO: add audio
+//#include <xaudio2.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "geometry.h"
 #include "platform_layer.h"
 
-//#define APP_BACKEND
-#ifdef APP_BACKEND
+//#define GAME_LOOP
+#ifdef GAME_LOOP
 
 typedef result(*init_function)(init_in_params* params, init_out_params* out_params);
 typedef result(*update_function)(update_params* params);
@@ -46,7 +48,7 @@ extern void shutdown(shutdown_params* in);
 result init(init_in_params* in, init_out_params* out);
 result update(update_params* in);
 void shutdown(shutdown_params* in);
-#endif // APP_BACKEND
+#endif // GAME_LOOP
 
 result create_bump_allocator(bump_allocator* allocator, size_t capacity) {
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
@@ -268,7 +270,6 @@ result write_entire_file(string path, const void* data, size_t size) {
     CloseHandle(file_handle);
     return RESULT_SUCCESS;
 }
-
 
 typedef struct input {
     uint64_t keys_pressed_bitset[4];
@@ -653,7 +654,7 @@ static result compile_shader(const char* code, size_t code_length, LPCSTR shader
     return RESULT_SUCCESS;
 }
 
-static result create_graphics(window* window, vector2int virtual_resolution, bump_allocator* temp_allocator, graphics* graphics) {
+static result create_graphics(window* window, vector2int virtual_resolution, bump_allocator* temp, graphics* graphics) {
     ASSERT(window != NULL, return RESULT_FAILURE, "Window pointer cannot be NULL");
     ASSERT(graphics != NULL, return RESULT_FAILURE, "Graphics pointer cannot be NULL");
     memset(graphics, 0, sizeof(*graphics));
@@ -936,9 +937,9 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
 
     // Sprite Sheet Texture:
     {
-        string current_directory = get_executable_directory(temp_allocator);
+        string current_directory = get_executable_directory(temp);
         string sprite_sheet_path = { 0 };
-        if (find_first_file_with_extension(current_directory, (string)CSTR(".png"), temp_allocator, &sprite_sheet_path) != RESULT_SUCCESS) {
+        if (find_first_file_with_extension(current_directory, (string)CSTR(".png"), temp, &sprite_sheet_path) != RESULT_SUCCESS) {
             BUG("Failed to find a .png file in the executable directory: %.*s", current_directory.length, current_directory.text);
             return RESULT_FAILURE;
         }
@@ -1209,32 +1210,32 @@ static struct {
     window window;
     graphics graphics;
     clock clock;
-    void* user_state;
-} app; // <- this static variable is only used globally in WinMain, create_app() and destroy_app() (but it's members may be passed to function calls)
+    void* game_state;
+} game; // <- this static variable is only used globally in WinMain, create_game() and destroy_game() (but it's members may be passed to function calls)
 
-static result create_app(void) {
-    if (create_clock(&app.clock) != RESULT_SUCCESS) {
+static result create_game(void) {
+    if (create_clock(&game.clock) != RESULT_SUCCESS) {
         BUG("Failed to create application clock (for measuring delta time).");
         return RESULT_FAILURE;
     }
 
-    if (create_bump_allocator(&app.memory_allocators.permanent_allocator, 1024 * 1024 * 1024) != RESULT_SUCCESS) {
+    if (create_bump_allocator(&game.memory_allocators.perm, 1024 * 1024 * 1024) != RESULT_SUCCESS) {
         BUG("Failed to create permanent memory allocator.");
         return RESULT_FAILURE;
     }
 
-    if (create_bump_allocator(&app.memory_allocators.temp_allocator, 64 * 1024 * 1024) != RESULT_SUCCESS) {
+    if (create_bump_allocator(&game.memory_allocators.temp, 64 * 1024 * 1024) != RESULT_SUCCESS) {
         BUG("Failed to create temporary memory allocator.");
         return RESULT_FAILURE;
     }
 
-    if (create_window(&app.window, "Game Overlord", 1280, 720, WINDOW_MODE_WINDOWED) != RESULT_SUCCESS) {
+    if (create_window(&game.window, "Game Overlord", 1280, 720, WINDOW_MODE_WINDOWED) != RESULT_SUCCESS) {
         BUG("Failed to create application window.");
         return RESULT_FAILURE;
     }
 
     init_in_params in_params = { 0 };
-    in_params.memory_allocators = &app.memory_allocators;
+    in_params.memory_allocators = &game.memory_allocators;
     init_out_params out_params = { 0 };
 
     if (init(&in_params, &out_params) != RESULT_SUCCESS) {
@@ -1242,99 +1243,99 @@ static result create_app(void) {
         return RESULT_FAILURE;
     }
 
-    if (create_graphics(&app.window, out_params.virtual_resolution, &app.memory_allocators.temp_allocator, &app.graphics) != RESULT_SUCCESS) {
+    if (create_graphics(&game.window, out_params.virtual_resolution, &game.memory_allocators.temp, &game.graphics) != RESULT_SUCCESS) {
         BUG("Failed to create graphics context.");
         return RESULT_FAILURE;
     }
 
-    app.user_state = out_params.user_state;
+    game.game_state = out_params.game_state;
     return RESULT_SUCCESS;
 }
 
-static void destroy_app(void) {
+static void destroy_game(void) {
     shutdown_params shutdown_params = { 0 };
-    shutdown_params.user_state = app.user_state;
-    shutdown_params.memory_allocators = &app.memory_allocators;
+    shutdown_params.game_state = game.game_state;
+    shutdown_params.memory_allocators = &game.memory_allocators;
     shutdown(&shutdown_params);
 
-    destroy_graphics(&app.graphics);
-    destroy_window(&app.window);
-    destroy_bump_allocator(&app.memory_allocators.permanent_allocator);
-    destroy_bump_allocator(&app.memory_allocators.temp_allocator);
+    destroy_graphics(&game.graphics);
+    destroy_window(&game.window);
+    destroy_bump_allocator(&game.memory_allocators.perm);
+    destroy_bump_allocator(&game.memory_allocators.temp);
 
 #ifdef HOT_RELOAD_HOST
     FreeLibrary(app_dll);
 #endif
 }
 
-
-#ifdef APP_BACKEND
+#ifdef GAME_LOOP
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
 #ifdef HOT_RELOAD_HOST
     if (!potential_hot_reload(HOT_RELOAD_FORCED)) {
-        BUG("Failed to load initial app DLL.");
+        BUG("Failed to load initial game DLL.");
         FreeLibrary(app_dll);
         return -1;
     }
 #endif
 
-    if (create_app() != RESULT_SUCCESS) {
+    if (create_game() != RESULT_SUCCESS) {
         BUG("Failed to create application.");
         goto cleanup;
     }
 
     // update the clock just before the first frame so delta time is not too big.
-    update_clock(&app.clock);
+    update_clock(&game.clock);
 
     /*-----------------------------------------------------------------*/
     // Main loop
     while (1) {
-        update_clock(&app.clock);
-        reset_bump_allocator(&app.memory_allocators.temp_allocator);
+        update_clock(&game.clock);
+        reset_bump_allocator(&game.memory_allocators.temp);
 
 #ifdef HOT_RELOAD_HOST
         potential_hot_reload(HOT_RELOAD_IF_DLL_UPDATED);
 #endif
-        input* input_state = update_window_input(&app.window);
+        input* input_state = update_window_input(&game.window);
         if (input_state->closed_window) {
             break;
         }
 
         { // Map the instance buffer to update instance data
-            HRESULT hr = app.graphics.context->lpVtbl->Map(app.graphics.context, (ID3D11Resource*)app.graphics.instance_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &app.graphics.instance_buffer_mapping);
+            HRESULT hr = game.graphics.context->lpVtbl->Map(game.graphics.context, (ID3D11Resource*)game.graphics.instance_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &game.graphics.instance_buffer_mapping);
             if (FAILED(hr)) {
                 BUG("Failed to map instance buffer. HRESULT: 0x%08X", hr);
                 goto cleanup;
             }
 
-            app.graphics.sprite_instances.elements = (sprite_instance*)app.graphics.instance_buffer_mapping.pData;
-            app.graphics.sprite_instances.count = 0;
+            game.graphics.sprite_instances.elements = (sprite_instance*)game.graphics.instance_buffer_mapping.pData;
+            game.graphics.sprite_instances.count = 0;
         }
 
-        { // Update app
+        { // Update game
             update_params update_params = { 0 };
-            update_params.clock = app.clock;
-            update_params.graphics = &app.graphics;
-            update_params.memory_allocators = &app.memory_allocators;
+            update_params.clock = game.clock;
+            update_params.graphics = &game.graphics;
+            update_params.memory_allocators = &game.memory_allocators;
             update_params.input = input_state;
-            update_params.user_state = app.user_state;
+            update_params.game_state = game.game_state;
 
             if (update(&update_params) != RESULT_SUCCESS) {
-                BUG("Failed to update app.");
+                BUG("Failed to update game.");
                 break;
             }
         }
 
-        { // Unmap the instance buffer after updating sprite data (presumably from update app)
-            app.graphics.context->lpVtbl->Unmap(app.graphics.context, (ID3D11Resource*)app.graphics.instance_buffer, 0);
+
+        { // Unmap the instance buffer after updating sprite data (presumably from update game)
+            game.graphics.context->lpVtbl->Unmap(game.graphics.context, (ID3D11Resource*)game.graphics.instance_buffer, 0);
         }
 
-        draw_graphics(&app.graphics);
+        draw_graphics(&game.graphics);
     }
 
 cleanup:
-    destroy_app();
+    destroy_game();
     return 0;
 }
 
-#endif // APP_BACKEND
+#endif // GAME_LOOP

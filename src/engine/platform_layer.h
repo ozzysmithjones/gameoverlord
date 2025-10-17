@@ -30,8 +30,11 @@ static inline void reset_bump_allocator(bump_allocator* allocator) {
 }
 
 typedef struct {
-    bump_allocator temp_allocator;
-    bump_allocator permanent_allocator;
+    /* Temporary memory allocator, used for allocations that last for one frame. */
+    bump_allocator temp;
+
+    /* Permanent memory allocator, used for allocations that last for the entire program lifetime. */
+    bump_allocator perm;
 } memory_allocators;
 
 
@@ -255,7 +258,7 @@ void wait_condition_variable(condition_variable* cv, mutex* m);
 // =============================================================
 
 typedef struct {
-    void* user_state;
+    void* game_state;
     graphics* graphics;
     memory_allocators* memory_allocators;
     input* input;
@@ -263,7 +266,7 @@ typedef struct {
 } update_params;
 
 typedef struct {
-    void* user_state;
+    void* game_state;
     memory_allocators* memory_allocators;
 } shutdown_params;
 
@@ -272,7 +275,7 @@ typedef struct {
 } init_in_params;
 
 typedef struct {
-    void* user_state;
+    void* game_state;
 
     /*
     Modern computers are much higher resolution than older games were designed for.

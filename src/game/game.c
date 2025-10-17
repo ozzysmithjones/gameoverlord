@@ -8,30 +8,44 @@ typedef struct {
 } game_state;
 
 __declspec(dllexport) result init(init_in_params* in, init_out_params* out) {
-    game_state* state = (game_state*)bump_allocate(&in->memory_allocators->permanent_allocator, alignof(game_state), sizeof(game_state));
+    game_state* state = (game_state*)bump_allocate(&in->memory_allocators->perm, alignof(game_state), sizeof(game_state));
     if (state == NULL) {
         BUG("Failed to allocate memory for game state.");
         return RESULT_FAILURE;
     }
-    
-    // These values must be filled in during init.
-    // The state that you want to persist, and the virtual resolution of your screen that you want to target.
-    // The game engine will manage scaling up to the actual screen resolution, keeping the aspect ratio the same and letterboxing as needed.
-    out->user_state = state;
-    out->virtual_resolution.x = 800;
-    out->virtual_resolution.y = 600;
 
+    out->game_state = (void*)state;
+    out->virtual_resolution = (vector2int){ 600, 400 };
     return RESULT_SUCCESS;
 }
 
 __declspec(dllexport) result update(update_params* in) {
-    game_state* state = (game_state*)in->user_state;
+    game_state* state = (game_state*)in->game_state;
+    if (state == NULL) {
+        BUG("Game state is NULL in update.");
+        return RESULT_FAILURE;
+    }
 
-    // Game logic would go here
+    state->position.x += 50.0f * in->clock.time_since_previous_update;
+
+    draw_sprite(
+        in->graphics,
+        state->position,
+        (vector2) {
+        128.0f, 128.0f
+    },
+        (vector2int) {
+        0, 0
+    },
+        (vector2int) {
+        64, 64
+    },
+        0.0f
+    );
 
     return RESULT_SUCCESS;
 }
 
 __declspec(dllexport) void shutdown(shutdown_params* in) {
-    
+
 }
