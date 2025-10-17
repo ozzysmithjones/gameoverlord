@@ -1268,6 +1268,97 @@ static void destroy_game(void) {
 #endif
 }
 
+STATIC_ASSERT((sizeof(mutex) == sizeof(HANDLE)), mutex_size_must_match_handle_size);
+STATIC_ASSERT((alignof(mutex) >= alignof(HANDLE)), mutex_alignment_must_match_handle_alignment);
+
+result create_mutex(mutex* m) {
+    ASSERT(m != NULL, return RESULT_FAILURE, "Mutex pointer cannot be NULL");
+    HANDLE* handle = (HANDLE*)m->internals;
+    *handle = CreateMutexA(NULL, FALSE, NULL);
+    ASSERT(*handle != NULL, return RESULT_FAILURE, "Failed to create mutex");
+}
+
+result lock_mutex(mutex* m) {
+    ASSERT(m != NULL, return RESULT_FAILURE, "Mutex pointer cannot be NULL");
+    HANDLE* handle = (HANDLE*)m->internals;
+    DWORD wait_result = WaitForSingleObject(*handle, INFINITE);
+    ASSERT(wait_result == WAIT_OBJECT_0, return RESULT_FAILURE, "Failed to lock mutex, error code: %lu, wait result: %lu", GetLastError(), wait_result);
+    return RESULT_SUCCESS;
+}
+
+result unlock_mutex(mutex* m) {
+    ASSERT(m != NULL, return RESULT_FAILURE, "Mutex pointer cannot be NULL");
+    HANDLE* handle = (HANDLE*)m->internals;
+    BOOL release_result = ReleaseMutex(*handle);
+    ASSERT(release_result != 0, return RESULT_FAILURE, "Failed to unlock mutex, error code: %lu, release result: %lu", GetLastError(), release_result);
+    return RESULT_SUCCESS;
+}
+
+void destroy_mutex(mutex* m) {
+    ASSERT(m != NULL, return, "Mutex pointer cannot be NULL");
+    HANDLE* handle = (HANDLE*)m->internals;
+    BOOL close_result = CloseHandle(*handle);
+    DEBUG_ASSERT(close_result != 0, return, "Failed to destroy mutex");
+}
+
+STATIC_ASSERT((sizeof(thread) == sizeof(HANDLE)), thread_size_must_match_handle_size);
+STATIC_ASSERT((alignof(thread) >= alignof(HANDLE)), thread_alignment_must_match_handle_alignment);
+
+result create_thread(thread* t, unsigned long(*start_routine)(void*), void* arg) {
+    ASSERT(t != NULL, return RESULT_FAILURE, "Thread pointer cannot be NULL");
+    HANDLE* handle = (HANDLE*)t->internals;
+    *handle = CreateThread(
+        NULL,
+        0,
+        (LPTHREAD_START_ROUTINE)start_routine,
+        arg,
+        0,
+        NULL
+    );
+    if (*handle == NULL) {
+        BUG("Failed to create thread.");
+        return RESULT_FAILURE;
+    }
+    return RESULT_SUCCESS;
+}
+
+result join_thread(thread* t) {
+    ASSERT(t != NULL, return RESULT_FAILURE, "Thread pointer cannot be NULL");
+    HANDLE* handle = (HANDLE*)t->internals;
+    DWORD wait_result = WaitForSingleObject(*handle, INFINITE);
+    ASSERT(wait_result == WAIT_OBJECT_0, return RESULT_FAILURE, "Failed to join thread, error code: %lu, wait result: %lu", GetLastError(), wait_result);
+    return RESULT_SUCCESS;
+}
+
+void destroy_thread(thread* t) {
+    ASSERT(t != NULL, return, "Thread pointer cannot be NULL");
+    HANDLE* handle = (HANDLE*)t->internals;
+    BOOL close_result = CloseHandle(*handle);
+    DEBUG_ASSERT(close_result != 0, return, "Failed to destroy thread");
+}
+
+STATIC_ASSERT((sizeof(condition_variable) == sizeof(CONDITION_VARIABLE)), condition_variable_size_must_match);
+STATIC_ASSERT((alignof(condition_variable) >= alignof(CONDITION_VARIABLE)), condition_variable_alignment_must_match);
+
+result init_condition_variable(condition_variable* cv) {
+    ASSERT(cv != NULL, return RESULT_FAILURE, "Condition variable pointer cannot be NULL");
+    InitializeConditionVariable((PCONDITION_VARIABLE)cv->internals);
+    return RESULT_SUCCESS;
+}
+
+result signal_condition_variable(condition_variable* cv) {
+    ASSERT(cv != NULL, return RESULT_FAILURE, "Condition variable pointer cannot be NULL");
+    WakeConditionVariable((PCONDITION_VARIABLE)cv->internals);
+    return RESULT_SUCCESS;
+}
+
+result wait_condition_variable(condition_variable* cv, mutex* m) {
+    ASSERT(cv != NULL, return RESULT_FAILURE, "Condition variable pointer cannot be NULL");
+    ASSERT(m != NULL, return RESULT_FAILURE, "Mutex pointer cannot be NULL");
+    SleepConditionVariableCS((PCONDITION_VARIABLE)cv->internals, (PCRITICAL_SECTION)m->internals, INFINITE);
+    return RESULT_SUCCESS;
+}
+
 #ifdef GAME_LOOP
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
 #ifdef HOT_RELOAD_HOST

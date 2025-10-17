@@ -219,7 +219,7 @@ result write_entire_file(string path, const void* data, size_t size);
 typedef union {
 #ifdef _WIN32
     uint64_t alignment_dummy;
-    uint8_t internals[40];
+    uint8_t internals[8];
 #else
 #error Unsupported platform for mutex structure
 #endif
@@ -239,18 +239,18 @@ typedef union {
     uint8_t internals[8];
 } condition_variable;
 
-void create_mutex(mutex* m);
-void lock_mutex(mutex* m);
-void unlock_mutex(mutex* m);
+result create_mutex(mutex* m);
+result lock_mutex(mutex* m);
+result unlock_mutex(mutex* m);
 void destroy_mutex(mutex* m);
 
 result create_thread(thread* t, unsigned long (*start_routine)(void*), void* arg);
-void join_thread(thread* t);
+result join_thread(thread* t);
 void destroy_thread(thread* t);
 
-void init_condition_variable(condition_variable* cv);
-void signal_condition_variable(condition_variable* cv);
-void wait_condition_variable(condition_variable* cv, mutex* m);
+result init_condition_variable(condition_variable* cv);
+result signal_condition_variable(condition_variable* cv);
+result wait_condition_variable(condition_variable* cv, mutex* m);
 
 
 // =============================================================
