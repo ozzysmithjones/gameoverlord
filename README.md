@@ -52,7 +52,7 @@ __declspec(dllexport) result init(init_in_params* in, init_out_params* out) {
 
 __declspec(dllexport) result update(update_params* in) {
     
-    // During update, you can get the user-data that you have allocated during init(). Keep in mind that this stateis intended to persist across hot-reloads.
+    // During update, you can get the user-data that you have allocated during init(). Keep in mind that this state is intended to persist across hot-reloads.
     game_state* state = (game_state*)in->user_state;
 
     // Game logic would go here
