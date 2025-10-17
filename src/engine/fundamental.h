@@ -91,7 +91,7 @@ static inline bool string_equal(string a, string b) {
     result name##_insert_multiple(name* array, uint32_t index, element_type* elements, uint32_t count); \
     result name##_remove(name* array, uint32_t index); \
     result name##_remove_swap(name* array, uint32_t index); \
-    result name##_find(name* array, element_type element, uint32_t* out_index); \
+    bool name##_find(name* array, element_type element, uint32_t* out_index); \
     static inline void name##_clear(name* array) { \
         ASSERT(array != NULL, return, "Capped array " #name " cannot be NULL"); \
         array->count = 0; \
@@ -169,17 +169,17 @@ static inline bool string_equal(string a, string b) {
         --array->count; \
         return RESULT_SUCCESS; \
     } \
-    result name##_find(name* array, element_type element, uint32_t* out_index) {\
-        ASSERT(array != NULL, return RESULT_FAILURE, "Capped array " #name " cannot be NULL"); \
+    bool name##_find(name* array, element_type element, uint32_t* out_index) {\
+        ASSERT(array != NULL, return false, "Capped array " #name " cannot be NULL"); \
         for (uint32_t i = 0; i < array->count; ++i) { \
             if (memcmp(&array->elements[i], &element, sizeof(element_type)) == 0) { \
                 if (out_index) { \
                     *out_index = i; \
                 } \
-                return RESULT_SUCCESS; \
+                return true; \
             } \
         } \
-        return RESULT_FAILURE; \
+        return false; \
     }
 
 #define MAP_0(action)

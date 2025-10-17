@@ -639,6 +639,7 @@ vector2int get_virtual_resolution(graphics* graphics) {
     return graphics->virtual_resolution;
 }
 
+
 vector2int get_actual_resolution(graphics* graphics) {
     ASSERT(graphics != NULL, return ((vector2int) {
         0, 0
@@ -1184,6 +1185,231 @@ static void destroy_graphics(graphics* graphics) {
 
 /*
 =============================================================================================================================
+    Audio
+=============================================================================================================================
+*/
+
+
+IMPLEMENT_CAPPED_ARRAY(sound_files, string, MAX_SOUNDS);
+
+typedef struct {
+    uint8_t* data;
+    size_t data_size;
+    sound_looping looping;
+    WAVEFORMATEX* wave_format;
+} sound;
+
+DECLARE_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS);
+IMPLEMENT_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS);
+DECLARE_CAPPED_ARRAY(playing_sounds, sound*, MAX_CONCURRENT_SOUNDS);
+IMPLEMENT_CAPPED_ARRAY(playing_sounds, sound*, MAX_CONCURRENT_SOUNDS);
+
+typedef struct audio {
+    IXAudio2* xaudio2;
+    IXAudio2MasteringVoice* mastering_voice;
+    IXAudio2SourceVoice* source_voices[MAX_CONCURRENT_SOUNDS];
+    sounds sounds;
+    playing_sounds playing_sounds;
+    uint8_t* sound_data_buffer;
+    size_t sound_data_buffer_capacity;
+} audio;
+
+typedef struct {
+    union {
+        uint32_t id;
+        char id_chars[4];
+    };
+    uint32_t size;
+} wav_file_chunk_header;
+
+static result load_wav_file(const uint8_t* file_data, size_t file_size, sound* out_sound) {
+    /*
+     WAV file is seperated into a series of chunks. Each chunk has a header that specifies the chunk ID and size of the rest of the chunk (in bytes).
+     We need three chunks to load a basic PCM WAV file:
+        1. "RIFF" chunk: This is the main chunk that identifies the file as a WAV file. It contains the overall size of the file and the format type ("WAVE").
+        2. "fmt " chunk: This chunk contains the format information for the audio data, such as sample rate, bit depth, number of channels, and audio format (PCM).
+        3. "data" chunk: This chunk contains the actual audio sample data.
+    We can load a WAV file by reading these chunks in sequence (making sure that we check the IDs to ensure we are reading the correct chunks).
+    */
+
+    ASSERT(file_data != NULL, return RESULT_FAILURE, "File data pointer cannot be NULL");
+    ASSERT(file_size > sizeof(wav_file_chunk_header) + 4, return RESULT_FAILURE, "File size is too small to be a valid WAV file");
+    ASSERT(out_sound != NULL, return RESULT_FAILURE, "Output sound pointer cannot be NULL");
+    memset(out_sound, 0, sizeof(*out_sound));
+
+    uint8_t* cursor = (uint8_t*)file_data;
+    uint8_t* file_end = (uint8_t*)file_data + file_size;
+
+    // Read RIFF chunk
+    wav_file_chunk_header* riff_chunk = (wav_file_chunk_header*)cursor;
+    if (memcmp(&riff_chunk->id_chars, "RIFF", 4) != 0) {
+        BUG("Invalid WAV file: Missing RIFF chunk");
+        return RESULT_FAILURE;
+    }
+
+    cursor += sizeof(wav_file_chunk_header);
+    if (cursor + 4 > file_end || memcmp(cursor, "WAVE", 4) != 0) {
+        BUG("Invalid WAV file: Missing WAVE format identifier");
+        return RESULT_FAILURE;
+    }
+
+    cursor += 4; // Move past "WAVE" format identifier
+
+    // Read chunks until we find "fmt " and "data"
+    bool fmt_chunk_found = false;
+    bool data_chunk_found = false;
+
+    while (cursor + sizeof(wav_file_chunk_header) <= file_end) {
+        wav_file_chunk_header* chunk_header = (wav_file_chunk_header*)cursor;
+        cursor += sizeof(wav_file_chunk_header);
+
+        if (memcmp(&chunk_header->id_chars, "fmt ", 4) == 0) {
+            // Read format chunk
+            if (chunk_header->size < 16 || cursor + chunk_header->size > file_end) {
+                BUG("Invalid WAV file: Corrupted fmt chunk");
+                return RESULT_FAILURE;
+            }
+
+            out_sound->wave_format = (WAVEFORMATEX*)cursor;
+            fmt_chunk_found = true;
+            if (fmt_chunk_found && data_chunk_found) {
+                return RESULT_SUCCESS;
+            }
+        }
+        else if (memcmp(&chunk_header->id_chars, "data", 4) == 0) {
+            // Read data chunk
+            if (cursor + chunk_header->size > file_end) {
+                BUG("Invalid WAV file: Corrupted data chunk");
+                return RESULT_FAILURE;
+            }
+
+            out_sound->data_size = chunk_header->size;
+            out_sound->data = cursor;
+
+            data_chunk_found = true;
+            if (fmt_chunk_found && data_chunk_found) {
+                return RESULT_SUCCESS;
+            }
+        }
+
+        cursor += chunk_header->size;
+    }
+
+    BUG("Invalid WAV file: Missing fmt or data chunk");
+    return RESULT_FAILURE;
+}
+
+
+static void load_sounds(audio* audio, sound_files* sound_files, memory_allocators* allocators) {
+    ASSERT(audio != NULL, return, "Audio pointer cannot be NULL");
+    ASSERT(sound_files != NULL, return, "Sound files pointer cannot be NULL");
+    ASSERT(allocators != NULL, return, "Memory allocators pointer cannot be NULL");
+
+    char full_path_buffer[MAX_PATH];
+
+    for (uint32_t i = 0; i < sound_files->count; ++i) {
+        string sound_file_path = sound_files->elements[i];
+        string executable_directory = get_executable_directory(&allocators->temp);
+        int length = sprintf_s(full_path_buffer, MAX_PATH, "%.*s//%.*s", executable_directory.length, executable_directory.text, sound_file_path.length, sound_file_path.text);
+        ASSERT(length > 0 && length < MAX_PATH, continue, "Failed to construct full path for sound file: %.*s", sound_file_path.length, sound_file_path.text);
+        string full_path = { .text = full_path_buffer, .length = (size_t)length };
+
+
+        string file_text;
+        if (read_entire_file(full_path, &allocators->perm, &file_text) != RESULT_SUCCESS) {
+            BUG("Failed to read sound file: %.*s", sound_file_path.length, sound_file_path.text);
+            continue;
+        }
+
+        sound new_sound;
+        if (load_wav_file(file_text.text, file_text.length, &new_sound) != RESULT_SUCCESS) {
+            BUG("Failed to load WAV file: %.*s", sound_file_path.length, sound_file_path.text);
+            continue;
+        }
+
+        if (sounds_append(&audio->sounds, new_sound) != RESULT_SUCCESS) {
+            BUG("Failed to append sound to audio system");
+            continue;
+        }
+    }
+
+    return;
+}
+
+static result create_audio(sound_files* sound_files, memory_allocators* allocators, audio* audio) {
+    ASSERT(sound_files != NULL, return RESULT_FAILURE, "Sound files pointer cannot be NULL");
+    ASSERT(audio != NULL, return RESULT_FAILURE, "Audio pointer cannot be NULL");
+    ASSERT(allocators != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
+    memset(audio, 0, sizeof(*audio));
+    HRESULT hr = RESULT_SUCCESS;
+
+    hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (FAILED(hr)) {
+        BUG("Failed to initialize COM library for XAudio2. HRESULT: 0x%08X", hr);
+        return RESULT_FAILURE;
+    }
+
+    hr = XAudio2Create(&audio->xaudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
+    if (FAILED(hr)) {
+        BUG("Failed to create XAudio2 instance. HRESULT: 0x%08X", hr);
+        return RESULT_FAILURE;
+    }
+
+    hr = audio->xaudio2->lpVtbl->CreateMasteringVoice(audio->xaudio2, &audio->mastering_voice, AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, 0, NULL, NULL, AudioCategory_GameEffects);
+    if (FAILED(hr)) {
+        BUG("Failed to create mastering voice. HRESULT: 0x%08X", hr);
+        return RESULT_FAILURE;
+    }
+
+    load_sounds(audio, sound_files, allocators);
+
+    // IXAudio2VoiceCallbackVtbl vtable = { 0 };
+// 
+    // IXAudio2VoiceCallback voice_callback;
+    // voice_callback.lpVtbl = &vtable; 
+
+    return RESULT_SUCCESS;
+}
+
+static void destroy_audio(audio* audio) {
+    ASSERT(audio != NULL, return, "Audio pointer cannot be NULL");
+
+    if (audio->mastering_voice) {
+        audio->mastering_voice->lpVtbl->DestroyVoice(audio->mastering_voice);
+        audio->mastering_voice = NULL;
+    }
+    if (audio->xaudio2) {
+        audio->xaudio2->lpVtbl->Release(audio->xaudio2);
+        audio->xaudio2 = NULL;
+    }
+
+    memset(audio, 0, sizeof(*audio));
+}
+
+void play_sound(audio* audio, uint32_t sound_index, sound_looping looping) {
+    uint32_t index = 0;
+    if (playing_sounds_find(&audio->playing_sounds, &audio->sounds.elements[sound_index], &index)) {
+        sound* existing_sound = audio->playing_sounds.elements[index];
+        if (existing_sound->looping == looping) {
+            // Sound is already playing with the same looping setting
+            return;
+        }
+        else {
+            stop_sound(audio, sound_index, 0.0f); // Stop the existing sound immediately and play the new one
+        }
+    }
+
+    playing_sounds_append(&audio->playing_sounds, &audio->sounds.elements[sound_index]);
+}
+
+void play_sound_with_effects(audio* audio, uint32_t sound_index, sound_looping looping, float volume, float pitch, float fade_in_duration, float fade_out_duration) {
+}
+
+void stop_sound(audio* audio, uint32_t sound_index, float fade_out_duration) {
+}
+
+/*
+=============================================================================================================================
     Hot Reload
 =============================================================================================================================
 */
@@ -1359,6 +1585,7 @@ static struct {
     memory_allocators memory_allocators;
     window window;
     graphics graphics;
+    audio audio;
     clock clock;
     void* game_state;
 } game; // <- this static variable is only used globally in WinMain, create_game() and destroy_game() (but it's members may be passed to function calls)
@@ -1395,6 +1622,11 @@ static result create_game(void) {
 
     if (create_graphics(&game.window, out_params.virtual_resolution, &game.memory_allocators.temp, &game.graphics) != RESULT_SUCCESS) {
         BUG("Failed to create graphics context.");
+        return RESULT_FAILURE;
+    }
+
+    if (create_audio(&out_params.sound_files, &game.memory_allocators, &game.audio) != RESULT_SUCCESS) {
+        BUG("Failed to create audio context.");
         return RESULT_FAILURE;
     }
 
