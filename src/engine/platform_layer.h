@@ -105,16 +105,26 @@ vector2int get_virtual_resolution(graphics* graphics);
 #define AUDIO_BITS_PER_SAMPLE 16
 #endif
 
+#ifndef AUDIO_DEFAULT_VOLUME
+#define AUDIO_DEFAULT_VOLUME 1.0f
+#endif
+
 DECLARE_CAPPED_ARRAY(sound_files, string, MAX_SOUNDS);
 
 typedef enum {
-    SOUND_LOOP_NONE,
-    SOUND_LOOP_INFINITE,
-} sound_looping;
+    PLAYING_SOUND_NONE = 0,
+    PLAYING_SOUND_LOOPING = 1 << 0,
+    PLAYING_SOUND_EVEN_IF_ALREADY_PLAYING = 1 << 1,
+} playing_sound_flags;
 
-void play_sound(audio* audio, uint32_t sound_index, sound_looping looping);
-void play_sound_with_effects(audio* audio, uint32_t sound_index, sound_looping looping, float volume, float pitch, float fade_in_duration, float fade_out_duration);
-void stop_sound(audio* audio, uint32_t sound_index, float fade_out_duration);
+result play_sound(audio* audio, uint32_t sound_index, playing_sound_flags flags, float fade_in_duration);
+
+typedef enum {
+    STOPPING_ALL_INSTANCES,
+    STOPPING_FIRST_FOUND,
+} stopping_mode;
+
+void stop_sound(audio* audio, uint32_t sound_index, stopping_mode mode, float fade_out_duration);
 
 /*
 =============================================================================================================================
@@ -294,7 +304,7 @@ result lock_mutex(mutex* m);
 result unlock_mutex(mutex* m);
 void destroy_mutex(mutex* m);
 
-result create_thread(thread* t, unsigned long long (*start_routine)(void*), void* arg);
+result create_thread(thread* t, unsigned long (*start_routine)(void*), void* arg);
 result join_thread(thread* t);
 void destroy_thread(thread* t);
 
