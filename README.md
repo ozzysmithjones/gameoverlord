@@ -85,7 +85,7 @@ For now, the game engine just searches for the first .png file in the executable
 
 ## Error Handling
 
-This game engine uses a unique approach to error handling where there is a different strategy depending on the build of your program. If you are building a debug/development build, any error results in an immediate breakpoint with a handy error message (failing fast): 
+This game engine uses an approach to error handling where there is a different strategy depending on the build of your program. If you are building a debug/development build, any error results in an immediate breakpoint with a handy error message (failing fast): 
 
 ``` C
 if (pointer == NULL) {

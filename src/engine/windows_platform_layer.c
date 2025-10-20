@@ -9,8 +9,7 @@
 #include <d3dcompiler.h>
 
 // Audio API:
-// TODO: add audio
-//#include <xaudio2.h>
+#include <xaudio2.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -21,6 +20,7 @@
 #ifdef GAME_LOOP
 
 typedef result(*init_function)(init_in_params* params, init_out_params* out_params);
+typedef result(*start_function)(start_params* params);
 typedef result(*update_function)(update_params* params);
 typedef void (*shutdown_function)(shutdown_params* params);
 
@@ -29,6 +29,7 @@ typedef void (*shutdown_function)(shutdown_params* params);
 
 // Function pointers for linking dynamically with hot reloading:
 init_function init;
+start_function start;
 update_function update;
 shutdown_function shutdown;
 
@@ -41,14 +42,22 @@ shutdown_function shutdown;
 #else
 // Function declarations for static linking without hot reloading:
 extern result init(init_in_params* in, init_out_params* out);
+extern result start(start_params* in);
 extern result update(update_params* in);
 extern void shutdown(shutdown_params* in);
 #endif // HOT_RELOAD_HOST
 #else
 result init(init_in_params* in, init_out_params* out);
+result start(start_params* in);
 result update(update_params* in);
 void shutdown(shutdown_params* in);
 #endif // GAME_LOOP
+
+/*
+=============================================================================================================================
+    Memory Allocation
+=============================================================================================================================
+*/
 
 result create_bump_allocator(bump_allocator* allocator, size_t capacity) {
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
@@ -103,6 +112,12 @@ void* bump_allocate(bump_allocator* allocator, size_t alignment, size_t bytes) {
     return (LPBYTE)allocator->base + aligned;
 }
 
+/*
+=============================================================================================================================
+    Time
+=============================================================================================================================
+*/
+
 result create_clock(clock* clock) {
     ASSERT(clock != NULL, return RESULT_FAILURE, "Clock cannot be NULL");
 
@@ -140,6 +155,13 @@ void update_clock(clock* clock) {
     clock->time_since_creation = current_time_seconds - clock->creation_time;
     clock->previous_update_time = current_time_seconds;
 }
+
+
+/*
+=============================================================================================================================
+    File I/O
+=============================================================================================================================
+*/
 
 string get_executable_directory(bump_allocator* allocator) {
     char* path = (char*)bump_allocate(allocator, 1, MAX_PATH);
@@ -234,7 +256,7 @@ result read_entire_file(string path, bump_allocator* allocator, string* out_file
         return RESULT_FAILURE;
     }
 
-    void* buffer = bump_allocate(allocator, 1, (size_t)file_size.QuadPart);
+    void* buffer = bump_allocate(allocator, alignof(void*), (size_t)file_size.QuadPart);
     if (buffer == NULL) {
         BUG("Failed to allocate memory for reading file: %.*s", path.length, path.text);
         CloseHandle(file_handle);
@@ -270,6 +292,13 @@ result write_entire_file(string path, const void* data, size_t size) {
     CloseHandle(file_handle);
     return RESULT_SUCCESS;
 }
+
+
+/*
+=============================================================================================================================
+    Window
+=============================================================================================================================
+*/
 
 typedef struct input {
     uint64_t keys_pressed_bitset[4];
@@ -427,6 +456,12 @@ static window_size get_window_size(window* window) {
     };
 }
 
+/*
+=============================================================================================================================
+    Input
+=============================================================================================================================
+*/
+
 static input* update_window_input(window* window) {
     ASSERT(window != NULL, return NULL, "Window pointer cannot be NULL");
     input* input_state = &window->input_state;
@@ -539,6 +574,12 @@ float4 main(PS_INPUT input) : SV_TARGET{
 
 #pragma endregion
 
+/*
+=============================================================================================================================
+    Graphics
+=============================================================================================================================
+*/
+
 typedef struct {
     vector2 position;
     vector2 texcoord;
@@ -602,6 +643,7 @@ vector2int get_virtual_resolution(graphics* graphics) {
     return graphics->virtual_resolution;
 }
 
+
 vector2int get_actual_resolution(graphics* graphics) {
     ASSERT(graphics != NULL, return ((vector2int) {
         0, 0
@@ -653,6 +695,8 @@ static result compile_shader(const char* code, size_t code_length, LPCSTR shader
     *out_blob = shader_blob;
     return RESULT_SUCCESS;
 }
+
+
 
 static result create_graphics(window* window, vector2int virtual_resolution, bump_allocator* temp, graphics* graphics) {
     ASSERT(window != NULL, return RESULT_FAILURE, "Window pointer cannot be NULL");
@@ -1143,6 +1187,465 @@ static void destroy_graphics(graphics* graphics) {
     memset(graphics, 0, sizeof(*graphics));
 }
 
+/*
+=============================================================================================================================
+    Audio
+=============================================================================================================================
+*/
+
+
+IMPLEMENT_CAPPED_ARRAY(sound_files, string, MAX_SOUNDS);
+
+
+typedef struct {
+    uint8_t* data;
+    size_t data_size;
+    WAVEFORMATEX* wave_format;
+} sound;
+
+typedef enum {
+    FADE_NONE = 0,
+    FADE_IN = 1 << 0,
+    FADE_OUT = 1 << 1,
+} fade_mode;
+
+typedef struct {
+    IXAudio2VoiceCallback inheritance; // <- Emulating inheritance in C by just putting the base struct first
+    IXAudio2SourceVoice* source_voice;
+    sound* sound;
+    float fade_duration;
+    float fade_time_remaining;
+    fade_mode fade_mode;
+    volatile uint32_t is_playing;
+} sound_player;
+
+// Callback implementations for sound_player (emulating polymorphism in C with a vtable):
+
+void sound_player_on_voice_processing_pass_start(IXAudio2VoiceCallback* this_callback, UINT32 bytes_required) {
+    // No implementation needed for this example
+}
+
+void sound_player_on_voice_processing_pass_end(IXAudio2VoiceCallback* this_callback) {
+    // No implementation needed for this example
+}
+
+void sound_player_on_stream_end(IXAudio2VoiceCallback* this_callback) {
+    sound_player* this_sound_player = (sound_player*)this_callback;
+    this_sound_player->is_playing = 0;
+}
+
+void sound_player_on_buffer_start(IXAudio2VoiceCallback* this_callback, void* p_buffer_context) {
+    // sound_player* this_sound_player = (sound_player*)this_callback;
+    // this_sound_player->is_playing = 1;
+}
+
+void sound_player_on_buffer_end(IXAudio2VoiceCallback* this_callback, void* p_buffer_context) {
+}
+
+void sound_player_on_loop_end(IXAudio2VoiceCallback* this_callback, void* p_buffer_context) {
+    // No implementation needed for this example
+}
+
+void sound_player_on_voice_error(IXAudio2VoiceCallback* this_callback, void* p_buffer_context, HRESULT error) {
+    // No implementation needed for this example
+}
+
+static IXAudio2VoiceCallbackVtbl sound_player_vtable = {
+    .OnVoiceProcessingPassStart = sound_player_on_voice_processing_pass_start,
+    .OnVoiceProcessingPassEnd = sound_player_on_voice_processing_pass_end,
+    .OnStreamEnd = sound_player_on_stream_end,
+    .OnBufferStart = sound_player_on_buffer_start,
+    .OnBufferEnd = sound_player_on_buffer_end,
+    .OnLoopEnd = sound_player_on_loop_end,
+    .OnVoiceError = sound_player_on_voice_error
+};
+
+DECLARE_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS);
+IMPLEMENT_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS);
+
+typedef struct audio {
+    IXAudio2* xaudio2;
+    IXAudio2MasteringVoice* mastering_voice;
+    WAVEFORMATEX master_wave_format;
+    sounds sounds;
+    sound_player sound_players[MAX_CONCURRENT_SOUNDS];
+
+    /*
+        Used as an optimization. To play a sound, we need to find a sound player that is not currently playing.
+        This normally requires iterating through the entire sound players array and checking the is_playing atomic flag every time.
+        We avoid sound-players that are already likely to be playing by starting the search 1 past the last played index.
+        This iteration wraps around when we get to the end of the array (so that we check all sound players eventually).
+    */
+    uint32_t first_attempt_sound_player_index;
+    float volume;
+} audio;
+
+typedef struct {
+    union {
+        uint32_t id;
+        char id_chars[4];
+    };
+    uint32_t size;
+} wav_file_chunk_header;
+
+static result load_wav_file(const uint8_t* file_data, size_t file_size, sound* out_sound) {
+    /*
+     WAV file is seperated into a series of chunks. Each chunk has a header that specifies the chunk ID and size of the rest of the chunk (in bytes).
+     We need three chunks to load a basic PCM WAV file:
+        1. "RIFF" chunk: This is the main chunk that identifies the file as a WAV file. It contains the overall size of the file and the format type ("WAVE").
+        2. "fmt " chunk: This chunk contains the format information for the audio data, such as sample rate, bit depth, number of channels, and audio format (PCM).
+        3. "data" chunk: This chunk contains the actual audio sample data.
+    We can load a WAV file by reading these chunks in sequence (making sure that we check the IDs to ensure we are reading the correct chunks).
+    */
+
+    ASSERT(file_data != NULL, return RESULT_FAILURE, "File data pointer cannot be NULL");
+    ASSERT(file_size > sizeof(wav_file_chunk_header) + 4, return RESULT_FAILURE, "File size is too small to be a valid WAV file");
+    ASSERT(out_sound != NULL, return RESULT_FAILURE, "Output sound pointer cannot be NULL");
+    memset(out_sound, 0, sizeof(*out_sound));
+
+    uint8_t* cursor = (uint8_t*)file_data;
+    uint8_t* file_end = (uint8_t*)file_data + file_size;
+
+    // Read RIFF chunk
+    wav_file_chunk_header* riff_chunk = (wav_file_chunk_header*)cursor;
+    if (memcmp(&riff_chunk->id_chars, "RIFF", 4) != 0) {
+        BUG("Invalid WAV file: Missing RIFF chunk");
+        return RESULT_FAILURE;
+    }
+
+    cursor += sizeof(wav_file_chunk_header);
+    if (cursor + 4 > file_end || memcmp(cursor, "WAVE", 4) != 0) {
+        BUG("Invalid WAV file: Missing WAVE format identifier");
+        return RESULT_FAILURE;
+    }
+
+    cursor += 4; // Move past "WAVE" format identifier
+
+    // Read chunks until we find "fmt " and "data"
+    bool fmt_chunk_found = false;
+    bool data_chunk_found = false;
+
+    while (cursor + sizeof(wav_file_chunk_header) <= file_end) {
+        wav_file_chunk_header* chunk_header = (wav_file_chunk_header*)cursor;
+        cursor += sizeof(wav_file_chunk_header);
+
+        if (memcmp(&chunk_header->id_chars, "fmt ", 4) == 0) {
+            // Read format chunk
+            if (chunk_header->size < 16 || cursor + chunk_header->size > file_end) {
+                BUG("Invalid WAV file: Corrupted fmt chunk");
+                return RESULT_FAILURE;
+            }
+
+            out_sound->wave_format = (WAVEFORMATEX*)cursor;
+            fmt_chunk_found = true;
+            if (fmt_chunk_found && data_chunk_found) {
+                return RESULT_SUCCESS;
+            }
+        }
+        else if (memcmp(&chunk_header->id_chars, "data", 4) == 0) {
+            // Read data chunk
+            if (cursor + chunk_header->size > file_end) {
+                BUG("Invalid WAV file: Corrupted data chunk");
+                return RESULT_FAILURE;
+            }
+
+            out_sound->data_size = chunk_header->size;
+            out_sound->data = cursor;
+
+            data_chunk_found = true;
+            if (fmt_chunk_found && data_chunk_found) {
+                return RESULT_SUCCESS;
+            }
+        }
+
+        cursor += chunk_header->size;
+    }
+
+    BUG("Invalid WAV file: Missing fmt or data chunk");
+    return RESULT_FAILURE;
+}
+
+static void create_sounds(audio* audio, sound_files* sound_files, memory_allocators* allocators, sounds* out_sounds) {
+    ASSERT(audio != NULL, return, "Audio pointer cannot be NULL");
+    ASSERT(sound_files != NULL, return, "Sound files pointer cannot be NULL");
+    ASSERT(allocators != NULL, return, "Memory allocators pointer cannot be NULL");
+    ASSERT(out_sounds != NULL, return, "Output sounds pointer cannot be NULL");
+    out_sounds->count = 0;
+    char full_path_buffer[MAX_PATH];
+
+    for (uint32_t i = 0; i < sound_files->count; ++i) {
+        string sound_file_path = sound_files->elements[i];
+        string executable_directory = get_executable_directory(&allocators->temp);
+        int length = sprintf_s(full_path_buffer, MAX_PATH, "%.*s//%.*s", executable_directory.length, executable_directory.text, sound_file_path.length, sound_file_path.text);
+        ASSERT(length > 0 && length < MAX_PATH, continue, "Failed to construct full path for sound file: %.*s", sound_file_path.length, sound_file_path.text);
+        string full_path = { .text = full_path_buffer, .length = (size_t)length };
+
+        string file_text;
+        if (read_entire_file(full_path, &allocators->perm, &file_text) != RESULT_SUCCESS) {
+            BUG("Failed to read sound file: %.*s", sound_file_path.length, sound_file_path.text);
+            continue;
+        }
+
+        sound new_sound;
+        if (load_wav_file(file_text.text, file_text.length, &new_sound) != RESULT_SUCCESS) {
+            BUG("Failed to load WAV file: %.*s", sound_file_path.length, sound_file_path.text);
+            continue;
+        }
+
+        if (sounds_append(out_sounds, new_sound) != RESULT_SUCCESS) {
+            BUG("Failed to append sound to audio system");
+            continue;
+        }
+    }
+}
+
+static result create_sound_players(audio* audio, sound_player* out_sound_players) {
+    ASSERT(audio != NULL, return RESULT_FAILURE, "Audio pointer cannot be NULL");
+    memset(out_sound_players, 0, sizeof(MAX_CONCURRENT_SOUNDS * sizeof(sound_player)));
+
+    for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
+        out_sound_players[i].inheritance.lpVtbl = &sound_player_vtable;
+        out_sound_players[i].is_playing = false;
+        HRESULT hr = audio->xaudio2->lpVtbl->CreateSourceVoice(
+            audio->xaudio2,
+            &out_sound_players[i].source_voice,
+            &audio->master_wave_format,
+            0,
+            XAUDIO2_DEFAULT_FREQ_RATIO,
+            (IXAudio2VoiceCallback*)&out_sound_players[i],
+            NULL,
+            NULL
+        );
+
+        if (FAILED(hr)) {
+            BUG("Failed to create source voice for sound player %u. HRESULT: 0x%08X", i, hr);
+            return RESULT_FAILURE;
+        }
+    }
+
+    return RESULT_SUCCESS;
+}
+
+static result create_audio(sound_files* sound_files, memory_allocators* allocators, audio* audio) {
+    ASSERT(sound_files != NULL, return RESULT_FAILURE, "Sound files pointer cannot be NULL");
+    ASSERT(audio != NULL, return RESULT_FAILURE, "Audio pointer cannot be NULL");
+    ASSERT(allocators != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
+    memset(audio, 0, sizeof(*audio));
+    audio->volume = AUDIO_DEFAULT_VOLUME;
+    HRESULT hr = RESULT_SUCCESS;
+
+    hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (FAILED(hr)) {
+        BUG("Failed to initialize COM library for XAudio2. HRESULT: 0x%08X", hr);
+        return RESULT_FAILURE;
+    }
+
+    hr = XAudio2Create(&audio->xaudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
+    if (FAILED(hr)) {
+        BUG("Failed to create XAudio2 instance. HRESULT: 0x%08X", hr);
+        return RESULT_FAILURE;
+    }
+
+    hr = audio->xaudio2->lpVtbl->CreateMasteringVoice(audio->xaudio2, &audio->mastering_voice, AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, 0, NULL, NULL, AudioCategory_GameEffects);
+    if (FAILED(hr)) {
+        BUG("Failed to create mastering voice. HRESULT: 0x%08X", hr);
+        return RESULT_FAILURE;
+    }
+
+    audio->mastering_voice->lpVtbl->SetVolume(audio->mastering_voice, audio->volume, 0);
+
+    memset(&audio->master_wave_format, 0, sizeof(WAVEFORMATEX));
+    audio->master_wave_format.wFormatTag = WAVE_FORMAT_PCM;
+    audio->master_wave_format.nChannels = AUDIO_CHANNELS;
+    audio->master_wave_format.nSamplesPerSec = AUDIO_SAMPLE_RATE;
+    audio->master_wave_format.wBitsPerSample = AUDIO_BITS_PER_SAMPLE;
+    audio->master_wave_format.nBlockAlign = (audio->master_wave_format.nChannels * audio->master_wave_format.wBitsPerSample) / 8;
+    audio->master_wave_format.nAvgBytesPerSec = audio->master_wave_format.nSamplesPerSec * audio->master_wave_format.nBlockAlign;
+    audio->master_wave_format.cbSize = 0;
+
+    if (create_sound_players(audio, audio->sound_players) != RESULT_SUCCESS) {
+        BUG("Failed to create sound players for audio system");
+        return RESULT_FAILURE;
+    }
+
+    create_sounds(audio, sound_files, allocators, &audio->sounds);
+
+#ifndef NDEBUG
+    // ASSERT that all sounds use the master wave format:
+    for (uint32_t i = 0; i < audio->sounds.count; ++i) {
+        sound* sound = &audio->sounds.elements[i];
+        ASSERT(sound->wave_format->wFormatTag == audio->master_wave_format.wFormatTag &&
+            sound->wave_format->nChannels == audio->master_wave_format.nChannels &&
+            sound->wave_format->nSamplesPerSec == audio->master_wave_format.nSamplesPerSec &&
+            sound->wave_format->wBitsPerSample == audio->master_wave_format.wBitsPerSample,
+            return RESULT_FAILURE,
+            "Sound %u has a different wave format than the master wave format", i);
+    }
+#endif
+
+    if (create_sound_players(audio, audio->sound_players) != RESULT_SUCCESS) {
+        BUG("Failed to create sound players for audio system");
+        return RESULT_FAILURE;
+    }
+
+    return RESULT_SUCCESS;
+}
+
+static void destroy_audio(audio* audio) {
+    ASSERT(audio != NULL, return, "Audio pointer cannot be NULL");
+
+    for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
+        sound_player* sound_player = &audio->sound_players[i];
+        if (sound_player->source_voice) {
+            sound_player->source_voice->lpVtbl->DestroyVoice(sound_player->source_voice);
+            sound_player->source_voice = NULL;
+        }
+    }
+
+    if (audio->mastering_voice) {
+        audio->mastering_voice->lpVtbl->DestroyVoice(audio->mastering_voice);
+        audio->mastering_voice = NULL;
+    }
+
+    if (audio->xaudio2) {
+        audio->xaudio2->lpVtbl->Release(audio->xaudio2);
+        audio->xaudio2 = NULL;
+    }
+
+    memset(audio, 0, sizeof(*audio));
+}
+
+static result find_sound_player(audio* audio, sound_player** out_sound_player) {
+    ASSERT(audio != NULL, return RESULT_FAILURE, "Audio pointer cannot be NULL");
+    ASSERT(out_sound_player != NULL, return RESULT_FAILURE, "Output sound player pointer cannot be NULL");
+
+    for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
+        uint32_t index = (audio->first_attempt_sound_player_index + i) % MAX_CONCURRENT_SOUNDS;
+        sound_player* sound_player = &audio->sound_players[index];
+        if (sound_player->sound == NULL) {
+            *out_sound_player = sound_player;
+            audio->first_attempt_sound_player_index = (index + 1) % MAX_CONCURRENT_SOUNDS;
+            return RESULT_SUCCESS;
+        }
+    }
+
+    return RESULT_FAILURE;
+}
+
+result play_sound(audio* audio, uint32_t sound_index, playing_sound_flags flags, float fade_in_duration) {
+    if (!(flags & PLAYING_SOUND_EVEN_IF_ALREADY_PLAYING)) {
+        for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
+            sound_player* sound_player = &audio->sound_players[i];
+            if (sound_player->sound == &audio->sounds.elements[sound_index]) {
+                return RESULT_FAILURE; // Sound is already playing, do not play again (just checking if the sound is NULL or not to avoid checking the is_playing atomic flag due to lack of optimization)
+            }
+        }
+    }
+
+    sound* sound_to_play = &audio->sounds.elements[sound_index];
+    sound_player* sound_player = NULL;
+    if (find_sound_player(audio, &sound_player) != RESULT_SUCCESS) {
+        BUG("No available sound player found to play sound");
+        return RESULT_FAILURE;
+    }
+
+    InterlockedExchange(&sound_player->is_playing, 1);
+    sound_player->sound = sound_to_play;
+    if (fade_in_duration > 0.0f) {
+        sound_player->fade_mode = FADE_IN;
+        sound_player->fade_duration = fade_in_duration;
+        sound_player->fade_time_remaining = fade_in_duration;
+        sound_player->source_voice->lpVtbl->SetVolume(sound_player->source_voice, 0.0f, 0);
+    }
+    else {
+        sound_player->fade_mode = FADE_NONE;
+        sound_player->fade_duration = 0.0f;
+        sound_player->fade_time_remaining = 0.0f;
+        sound_player->source_voice->lpVtbl->SetVolume(sound_player->source_voice, 1.0f, 0);
+    }
+
+    XAUDIO2_BUFFER buffer = { 0 };
+    buffer.AudioBytes = (UINT32)sound_to_play->data_size;
+    buffer.pAudioData = sound_to_play->data;
+    buffer.Flags = XAUDIO2_END_OF_STREAM;
+    buffer.LoopCount = (flags & PLAYING_SOUND_LOOPING) ? XAUDIO2_LOOP_INFINITE : 0;
+
+    HRESULT hr = sound_player->source_voice->lpVtbl->SubmitSourceBuffer(sound_player->source_voice, &buffer, NULL);
+    if (FAILED(hr)) {
+        BUG("Failed to submit audio buffer to source voice. HRESULT: 0x%08X", hr);
+        return RESULT_FAILURE;
+    }
+
+    hr = sound_player->source_voice->lpVtbl->Start(sound_player->source_voice, 0, 0);
+    if (FAILED(hr)) {
+        BUG("Failed to start source voice for sound. HRESULT: 0x%08X", hr);
+        return RESULT_FAILURE;
+    }
+
+    return RESULT_SUCCESS;
+}
+
+static void update_audio(audio* audio, float delta_time) {
+    ASSERT(audio != NULL, return, "Audio pointer cannot be NULL");
+
+    for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
+        sound_player* sound_player = &audio->sound_players[i];
+        if (!sound_player->is_playing) {
+            sound_player->source_voice->lpVtbl->Stop(sound_player->source_voice, 0, 0);
+            sound_player->source_voice->lpVtbl->FlushSourceBuffers(sound_player->source_voice);
+            sound_player->source_voice->lpVtbl->SetVolume(sound_player->source_voice, 1.0f, 0);
+            sound_player->sound = NULL;
+            continue;
+        }
+
+        if (sound_player->fade_mode == FADE_NONE) {
+            continue;
+        }
+
+        sound_player->fade_time_remaining -= delta_time;
+        if (sound_player->fade_time_remaining <= 0.0f) {
+            sound_player->fade_time_remaining = 0.0f;
+        }
+
+        float fade_progress = (sound_player->fade_time_remaining / sound_player->fade_duration);
+        float volume = (sound_player->fade_mode == FADE_IN) ? (1.0f - fade_progress) : fade_progress;
+        sound_player->source_voice->lpVtbl->SetVolume(sound_player->source_voice, volume, 0);
+    }
+}
+
+void stop_sound(audio* audio, uint32_t sound_index, stopping_mode mode, float fade_out_duration) {
+    ASSERT(audio != NULL, return, "Audio pointer cannot be NULL");
+
+    for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
+        sound_player* sound_player = &audio->sound_players[i];
+        if (sound_player->sound == &audio->sounds.elements[sound_index]) {
+            if (fade_out_duration > 0.0f) {
+                sound_player->fade_mode = FADE_OUT;
+                sound_player->fade_duration = fade_out_duration;
+                sound_player->fade_time_remaining = fade_out_duration;
+            }
+            else {
+                InterlockedExchange(&sound_player->is_playing, 0);
+                sound_player->source_voice->lpVtbl->Stop(sound_player->source_voice, 0, 0);
+                sound_player->source_voice->lpVtbl->FlushSourceBuffers(sound_player->source_voice);
+                sound_player->source_voice->lpVtbl->SetVolume(sound_player->source_voice, 1.0f, 0);
+                sound_player->sound = NULL;
+            }
+
+            if (mode == STOPPING_FIRST_FOUND) {
+                return;
+            }
+        }
+    }
+}
+
+/*
+=============================================================================================================================
+    Hot Reload
+=============================================================================================================================
+*/
+
+
 #ifdef HOT_RELOAD_HOST
 static HMODULE app_dll = NULL;
 
@@ -1192,9 +1695,10 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
     }
 
     init = (init_function)GetProcAddress(app_dll, "init");
+    start = (start_function)GetProcAddress(app_dll, "start");
     update = (update_function)GetProcAddress(app_dll, "update");
     shutdown = (shutdown_function)GetProcAddress(app_dll, "shutdown");
-    if (!init || !update || !shutdown) {
+    if (!init || !start || !update || !shutdown) {
         BUG("Failed to get function addresses from %s", HOT_RELOAD_DLL_TEMP_PATH);
         return false;
     }
@@ -1205,68 +1709,11 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
 
 #endif // HOT_RELOAD_HOST
 
-static struct {
-    memory_allocators memory_allocators;
-    window window;
-    graphics graphics;
-    clock clock;
-    void* game_state;
-} game; // <- this static variable is only used globally in WinMain, create_game() and destroy_game() (but it's members may be passed to function calls)
-
-static result create_game(void) {
-    if (create_clock(&game.clock) != RESULT_SUCCESS) {
-        BUG("Failed to create application clock (for measuring delta time).");
-        return RESULT_FAILURE;
-    }
-
-    if (create_bump_allocator(&game.memory_allocators.perm, 1024 * 1024 * 1024) != RESULT_SUCCESS) {
-        BUG("Failed to create permanent memory allocator.");
-        return RESULT_FAILURE;
-    }
-
-    if (create_bump_allocator(&game.memory_allocators.temp, 64 * 1024 * 1024) != RESULT_SUCCESS) {
-        BUG("Failed to create temporary memory allocator.");
-        return RESULT_FAILURE;
-    }
-
-    if (create_window(&game.window, "Game Overlord", 1280, 720, WINDOW_MODE_WINDOWED) != RESULT_SUCCESS) {
-        BUG("Failed to create application window.");
-        return RESULT_FAILURE;
-    }
-
-    init_in_params in_params = { 0 };
-    in_params.memory_allocators = &game.memory_allocators;
-    init_out_params out_params = { 0 };
-
-    if (init(&in_params, &out_params) != RESULT_SUCCESS) {
-        BUG("Failed to initialize app.");
-        return RESULT_FAILURE;
-    }
-
-    if (create_graphics(&game.window, out_params.virtual_resolution, &game.memory_allocators.temp, &game.graphics) != RESULT_SUCCESS) {
-        BUG("Failed to create graphics context.");
-        return RESULT_FAILURE;
-    }
-
-    game.game_state = out_params.game_state;
-    return RESULT_SUCCESS;
-}
-
-static void destroy_game(void) {
-    shutdown_params shutdown_params = { 0 };
-    shutdown_params.game_state = game.game_state;
-    shutdown_params.memory_allocators = &game.memory_allocators;
-    shutdown(&shutdown_params);
-
-    destroy_graphics(&game.graphics);
-    destroy_window(&game.window);
-    destroy_bump_allocator(&game.memory_allocators.perm);
-    destroy_bump_allocator(&game.memory_allocators.temp);
-
-#ifdef HOT_RELOAD_HOST
-    FreeLibrary(app_dll);
-#endif
-}
+/*
+=============================================================================================================================
+    Multi-threading
+=============================================================================================================================
+*/
 
 STATIC_ASSERT((sizeof(mutex) == sizeof(HANDLE)), mutex_size_must_match_handle_size);
 STATIC_ASSERT((alignof(mutex) >= alignof(HANDLE)), mutex_alignment_must_match_handle_alignment);
@@ -1276,6 +1723,7 @@ result create_mutex(mutex* m) {
     HANDLE* handle = (HANDLE*)m->internals;
     *handle = CreateMutexA(NULL, FALSE, NULL);
     ASSERT(*handle != NULL, return RESULT_FAILURE, "Failed to create mutex");
+    return RESULT_SUCCESS;
 }
 
 result lock_mutex(mutex* m) {
@@ -1359,6 +1807,82 @@ result wait_condition_variable(condition_variable* cv, mutex* m) {
     return RESULT_SUCCESS;
 }
 
+/*
+=============================================================================================================================
+    Game Loop
+=============================================================================================================================
+*/
+
+static struct {
+    memory_allocators memory_allocators;
+    window window;
+    graphics graphics;
+    audio audio;
+    clock clock;
+    void* game_state;
+} game; // <- this static variable is only used globally in WinMain, create_game() and destroy_game() (but it's members may be passed to function calls)
+
+static result create_game(void) {
+    if (create_clock(&game.clock) != RESULT_SUCCESS) {
+        BUG("Failed to create application clock (for measuring delta time).");
+        return RESULT_FAILURE;
+    }
+
+    if (create_bump_allocator(&game.memory_allocators.perm, 1024 * 1024 * 1024) != RESULT_SUCCESS) {
+        BUG("Failed to create permanent memory allocator.");
+        return RESULT_FAILURE;
+    }
+
+    if (create_bump_allocator(&game.memory_allocators.temp, 64 * 1024 * 1024) != RESULT_SUCCESS) {
+        BUG("Failed to create temporary memory allocator.");
+        return RESULT_FAILURE;
+    }
+
+    if (create_window(&game.window, "Game Overlord", 1280, 720, WINDOW_MODE_WINDOWED) != RESULT_SUCCESS) {
+        BUG("Failed to create application window.");
+        return RESULT_FAILURE;
+    }
+
+    init_in_params in_params = { 0 };
+    in_params.memory_allocators = &game.memory_allocators;
+    init_out_params out_params = { 0 };
+
+    if (init(&in_params, &out_params) != RESULT_SUCCESS) {
+        BUG("Failed to initialize app.");
+        return RESULT_FAILURE;
+    }
+
+    if (create_graphics(&game.window, out_params.virtual_resolution, &game.memory_allocators.temp, &game.graphics) != RESULT_SUCCESS) {
+        BUG("Failed to create graphics context.");
+        return RESULT_FAILURE;
+    }
+
+    if (create_audio(&out_params.sound_files, &game.memory_allocators, &game.audio) != RESULT_SUCCESS) {
+        BUG("Failed to create audio context.");
+        return RESULT_FAILURE;
+    }
+
+    game.game_state = out_params.game_state;
+    return RESULT_SUCCESS;
+}
+
+static void destroy_game(void) {
+    shutdown_params shutdown_params = { 0 };
+    shutdown_params.game_state = game.game_state;
+    shutdown_params.memory_allocators = &game.memory_allocators;
+    shutdown(&shutdown_params);
+
+    destroy_audio(&game.audio);
+    destroy_graphics(&game.graphics);
+    destroy_window(&game.window);
+    destroy_bump_allocator(&game.memory_allocators.perm);
+    destroy_bump_allocator(&game.memory_allocators.temp);
+
+#ifdef HOT_RELOAD_HOST
+    FreeLibrary(app_dll);
+#endif
+}
+
 #ifdef GAME_LOOP
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
 #ifdef HOT_RELOAD_HOST
@@ -1374,6 +1898,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         goto cleanup;
     }
 
+    {
+        start_params start_params = { 0 };
+        start_params.audio = &game.audio;
+        start_params.memory_allocators = &game.memory_allocators;
+        start_params.game_state = game.game_state;
+
+        if (start(&start_params) != RESULT_SUCCESS) {
+            BUG("Failed to start application.");
+            goto cleanup;
+        }
+    }
+
     // update the clock just before the first frame so delta time is not too big.
     update_clock(&game.clock);
 
@@ -1381,6 +1917,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     // Main loop
     while (1) {
         update_clock(&game.clock);
+        update_audio(&game.audio, game.clock.time_since_previous_update);
         reset_bump_allocator(&game.memory_allocators.temp);
 
 #ifdef HOT_RELOAD_HOST
@@ -1406,6 +1943,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             update_params update_params = { 0 };
             update_params.clock = game.clock;
             update_params.graphics = &game.graphics;
+            update_params.audio = &game.audio;
             update_params.memory_allocators = &game.memory_allocators;
             update_params.input = input_state;
             update_params.game_state = game.game_state;

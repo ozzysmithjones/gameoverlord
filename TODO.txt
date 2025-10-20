@@ -1,0 +1,6 @@
+TODO:
+
+- Implement Audio
+- Implement Texture arrays (to support multiple sprite-sheets at once)
+    - How to associate asset filenames with index values? (probably more ideal to use index/enums instead of hard-coded strings in code)
+- 
