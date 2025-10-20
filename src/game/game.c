@@ -16,6 +16,22 @@ __declspec(dllexport) result init(init_in_params* in, init_out_params* out) {
 
     out->game_state = (void*)state;
     out->virtual_resolution = (vector2int){ 600, 400 };
+
+    sound_files_append(&out->sound_files, (string)CSTR("FirstSteps.wav"));
+    sound_files_append(&out->sound_files, (string)CSTR("Jump.wav"));
+
+
+    return RESULT_SUCCESS;
+}
+
+__declspec(dllexport) result start(start_params* in) {
+    game_state* state = (game_state*)in->game_state;
+    if (state == NULL) {
+        BUG("Game state is NULL in start.");
+        return RESULT_FAILURE;
+    }
+
+    play_sound(in->audio, 0, PLAYING_SOUND_LOOPING, 0.0f);
     return RESULT_SUCCESS;
 }
 
@@ -27,6 +43,10 @@ __declspec(dllexport) result update(update_params* in) {
     }
 
     state->position.x += 50.0f * in->clock.time_since_previous_update;
+
+    if (is_key_down(in->input, KEY_SPACE)) {
+        play_sound(in->audio, 1, 0, 0.0f);
+    }
 
     draw_sprite(
         in->graphics,

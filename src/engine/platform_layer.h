@@ -321,6 +321,7 @@ result wait_condition_variable(condition_variable* cv, mutex* m);
 typedef struct {
     void* game_state;
     graphics* graphics;
+    audio* audio;
     memory_allocators* memory_allocators;
     input* input;
     clock clock;
@@ -332,9 +333,14 @@ typedef struct {
 } shutdown_params;
 
 typedef struct {
+    void* game_state;
+    memory_allocators* memory_allocators;
+    audio* audio;
+} start_params;
+
+typedef struct {
     memory_allocators* memory_allocators;
 } init_in_params;
-
 
 typedef struct {
     void* game_state;

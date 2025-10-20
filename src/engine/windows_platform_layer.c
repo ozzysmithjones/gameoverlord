@@ -20,6 +20,7 @@
 #ifdef GAME_LOOP
 
 typedef result(*init_function)(init_in_params* params, init_out_params* out_params);
+typedef result(*start_function)(start_params* params);
 typedef result(*update_function)(update_params* params);
 typedef void (*shutdown_function)(shutdown_params* params);
 
@@ -28,6 +29,7 @@ typedef void (*shutdown_function)(shutdown_params* params);
 
 // Function pointers for linking dynamically with hot reloading:
 init_function init;
+start_function start;
 update_function update;
 shutdown_function shutdown;
 
@@ -40,11 +42,13 @@ shutdown_function shutdown;
 #else
 // Function declarations for static linking without hot reloading:
 extern result init(init_in_params* in, init_out_params* out);
+extern result start(start_params* in);
 extern result update(update_params* in);
 extern void shutdown(shutdown_params* in);
 #endif // HOT_RELOAD_HOST
 #else
 result init(init_in_params* in, init_out_params* out);
+result start(start_params* in);
 result update(update_params* in);
 void shutdown(shutdown_params* in);
 #endif // GAME_LOOP
@@ -1581,7 +1585,7 @@ result play_sound(audio* audio, uint32_t sound_index, playing_sound_flags flags,
     return RESULT_SUCCESS;
 }
 
-static void update_sounds(audio* audio, float delta_time) {
+static void update_audio(audio* audio, float delta_time) {
     ASSERT(audio != NULL, return, "Audio pointer cannot be NULL");
 
     for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
@@ -1691,9 +1695,10 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
     }
 
     init = (init_function)GetProcAddress(app_dll, "init");
+    start = (start_function)GetProcAddress(app_dll, "start");
     update = (update_function)GetProcAddress(app_dll, "update");
     shutdown = (shutdown_function)GetProcAddress(app_dll, "shutdown");
-    if (!init || !update || !shutdown) {
+    if (!init || !start || !update || !shutdown) {
         BUG("Failed to get function addresses from %s", HOT_RELOAD_DLL_TEMP_PATH);
         return false;
     }
@@ -1893,6 +1898,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         goto cleanup;
     }
 
+    {
+        start_params start_params = { 0 };
+        start_params.audio = &game.audio;
+        start_params.memory_allocators = &game.memory_allocators;
+        start_params.game_state = game.game_state;
+
+        if (start(&start_params) != RESULT_SUCCESS) {
+            BUG("Failed to start application.");
+            goto cleanup;
+        }
+    }
+
     // update the clock just before the first frame so delta time is not too big.
     update_clock(&game.clock);
 
@@ -1900,6 +1917,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     // Main loop
     while (1) {
         update_clock(&game.clock);
+        update_audio(&game.audio, game.clock.time_since_previous_update);
         reset_bump_allocator(&game.memory_allocators.temp);
 
 #ifdef HOT_RELOAD_HOST
@@ -1925,6 +1943,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             update_params update_params = { 0 };
             update_params.clock = game.clock;
             update_params.graphics = &game.graphics;
+            update_params.audio = &game.audio;
             update_params.memory_allocators = &game.memory_allocators;
             update_params.input = input_state;
             update_params.game_state = game.game_state;
