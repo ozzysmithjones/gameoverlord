@@ -132,7 +132,6 @@ void stop_sound(audio* audio, uint32_t sound_index, stopping_mode mode, float fa
 =============================================================================================================================
 */
 
-
 typedef enum {
     KEY_NONE,
     KEY_BACKSPACE = 8,
@@ -263,7 +262,10 @@ bool is_key_up(input* input_state, keyboard_key key);
 =============================================================================================================================
 */
 
+DECLARE_SLICE(file_names, string);
+
 string get_executable_directory(bump_allocator* allocator);
+result find_files_with_extension(string directory, string extension, bump_allocator* allocator, file_names* out_file_names);
 result find_first_file_with_extension(string directory, string extension, bump_allocator* allocator, string* out_full_path);
 bool file_exists(string path);
 result read_entire_file(string path, bump_allocator* allocator, string* out_file_contents);

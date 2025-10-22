@@ -193,6 +193,41 @@ string get_executable_directory(bump_allocator* allocator) {
     };
 }
 
+result find_files_with_extension(string directory, string extension, bump_allocator* allocator, file_names* out_file_names) {
+    ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
+    ASSERT(out_file_names != NULL, return RESULT_FAILURE, "Output file names cannot be NULL");
+    ASSERT(extension.length > 0, return RESULT_FAILURE, "Extension cannot be empty");
+    memset(out_file_names, 0, sizeof(*out_file_names));
+
+    char search_path[MAX_PATH];
+    snprintf(search_path, MAX_PATH, "%.*s*%.*s", directory.length, directory.text, extension.length, extension.text);
+    WIN32_FIND_DATAA find_data;
+    HANDLE find_handle = FindFirstFileA(search_path, &find_data);
+    if (find_handle == INVALID_HANDLE_VALUE) {
+        BUG("Failed to find any files in directory: %.*s", directory.length, directory.text);
+        return RESULT_FAILURE;
+    }
+    do {
+        if (!(find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            // Found a file, construct the full path:
+            size_t full_path_length = directory.length + strlen(find_data.cFileName);
+            char* full_path = (char*)bump_allocate(allocator, 1, full_path_length + 1);
+            if (full_path == NULL) {
+                BUG("Failed to allocate memory for full path.");
+                FindClose(find_handle);
+                return RESULT_FAILURE;
+            }
+            snprintf(full_path, full_path_length + 1, "%.*s%s", directory.length, directory.text, find_data.cFileName);
+            string file_name = {
+                .text = full_path,
+                .length = (uint32_t)full_path_length
+            };
+            out_file_names->elements[out_file_names->count] = file_name;
+            ++out_file_names->count;
+        }
+    } while (FindNextFileA(find_handle, &find_data));
+}
+
 result find_first_file_with_extension(string directory, string extension, bump_allocator* allocator, string* out_full_path) {
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
     ASSERT(out_full_path != NULL, return RESULT_FAILURE, "Output full path cannot be NULL");
@@ -292,7 +327,6 @@ result write_entire_file(string path, const void* data, size_t size) {
     CloseHandle(file_handle);
     return RESULT_SUCCESS;
 }
-
 
 /*
 =============================================================================================================================
@@ -695,8 +729,6 @@ static result compile_shader(const char* code, size_t code_length, LPCSTR shader
     *out_blob = shader_blob;
     return RESULT_SUCCESS;
 }
-
-
 
 static result create_graphics(window* window, vector2int virtual_resolution, bump_allocator* temp, graphics* graphics) {
     ASSERT(window != NULL, return RESULT_FAILURE, "Window pointer cannot be NULL");
@@ -1193,9 +1225,7 @@ static void destroy_graphics(graphics* graphics) {
 =============================================================================================================================
 */
 
-
 IMPLEMENT_CAPPED_ARRAY(sound_files, string, MAX_SOUNDS);
-
 
 typedef struct {
     uint8_t* data;
@@ -1269,14 +1299,6 @@ typedef struct audio {
     WAVEFORMATEX master_wave_format;
     sounds sounds;
     sound_player sound_players[MAX_CONCURRENT_SOUNDS];
-
-    /*
-        Used as an optimization. To play a sound, we need to find a sound player that is not currently playing.
-        This normally requires iterating through the entire sound players array and checking the is_playing atomic flag every time.
-        We avoid sound-players that are already likely to be playing by starting the search 1 past the last played index.
-        This iteration wraps around when we get to the end of the array (so that we check all sound players eventually).
-    */
-    uint32_t first_attempt_sound_player_index;
     float volume;
 } audio;
 
@@ -1520,11 +1542,9 @@ static result find_sound_player(audio* audio, sound_player** out_sound_player) {
     ASSERT(out_sound_player != NULL, return RESULT_FAILURE, "Output sound player pointer cannot be NULL");
 
     for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
-        uint32_t index = (audio->first_attempt_sound_player_index + i) % MAX_CONCURRENT_SOUNDS;
-        sound_player* sound_player = &audio->sound_players[index];
+        sound_player* sound_player = &audio->sound_players[i];
         if (sound_player->sound == NULL) {
             *out_sound_player = sound_player;
-            audio->first_attempt_sound_player_index = (index + 1) % MAX_CONCURRENT_SOUNDS;
             return RESULT_SUCCESS;
         }
     }
@@ -1533,6 +1553,9 @@ static result find_sound_player(audio* audio, sound_player** out_sound_player) {
 }
 
 result play_sound(audio* audio, uint32_t sound_index, playing_sound_flags flags, float fade_in_duration) {
+    ASSERT(audio != NULL, return RESULT_FAILURE, "Audio pointer cannot be NULL");
+    ASSERT(sound_index < audio->sounds.count, return RESULT_FAILURE, "Invalid sound index");
+
     if (!(flags & PLAYING_SOUND_EVEN_IF_ALREADY_PLAYING)) {
         for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
             sound_player* sound_player = &audio->sound_players[i];
@@ -1590,6 +1613,10 @@ static void update_audio(audio* audio, float delta_time) {
 
     for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
         sound_player* sound_player = &audio->sound_players[i];
+        if (sound_player->sound == NULL) {
+            continue;
+        }
+
         if (!sound_player->is_playing) {
             sound_player->source_voice->lpVtbl->Stop(sound_player->source_voice, 0, 0);
             sound_player->source_voice->lpVtbl->FlushSourceBuffers(sound_player->source_voice);

@@ -16,7 +16,7 @@ file(GLOB_RECURSE GAME_SOURCES
     ${GAME_DIR}/*.h
    )
 
-SET(HOT_RELOAD ON)
+SET(HOT_RELOAD OFF)
 
 if(HOT_RELOAD)
     add_executable(engine WIN32 ${ENGINE_SOURCES})
