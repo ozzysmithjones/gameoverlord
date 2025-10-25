@@ -1,5 +1,12 @@
-#ifndef FILE_FORMATS_H
-#define FILE_FORMATS_H
+#ifndef ASSET_FILES_H
+#define ASSET_FILES_H
+
+/*
+This asset files module provides an interface for the game engine to read asset files.
+This is made separate from the platform layer because in the future we might also want to do some asset processing during compile-time,
+and so it makes sense to centralise the functions that might execute at runtime or compiletime for mental clarity.
+*/
+
 #include "platform_layer.h"
 
 typedef struct {
@@ -26,9 +33,8 @@ typedef struct {
 } sound;
 
 DECLARE_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS);
-DECLARE_CAPPED_ARRAY(images, image, MAX_IMAGES);
 
 result load_sounds(memory_allocators* allocators, sounds* out_sounds);
-result load_images(memory_allocators* allocators, images* out_images);
-void unload_images(images* images);
-#endif // FILE_FORMATS_H
+result load_first_image(bump_allocator* allocator, image* out_image);
+void unload_image(image* image);
+#endif // ASSET_FILES_H

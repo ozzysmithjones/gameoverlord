@@ -1,14 +1,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include "asset.h"
-
-#ifdef EXECUTABLE_EMBEDDED_ASSETS
-//#include "generated_sound_assets.h"
-//#include "generated_image_assets.h"
-#endif
+#include "asset_files.h"
 
 IMPLEMENT_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS)
-IMPLEMENT_CAPPED_ARRAY(images, image, MAX_IMAGES)
 
 typedef struct {
     union {
@@ -111,7 +105,6 @@ static void create_file_ordering(file_names* file_names, file_ordering* out_orde
 #ifndef NDEBUG
     uint64_t bitset = 0;
 #endif
-
     for (uint32_t i = 0; i < file_names->count; ++i) {
         out_ordering->index_by_file_name[i] = FILE_ORDERING_INVALID_INDEX;
         ASSERT(file_names->elements[i].length > 0, continue, "File name is empty at index %u", i);
@@ -179,84 +172,46 @@ static result create_sounds_from_files(memory_allocators* allocators, string sou
     return RESULT_SUCCESS;
 }
 
-static result create_images_from_files(memory_allocators* allocators, string image_directory, images* out_images) {
-    ASSERT(allocators != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
-    ASSERT(out_images != NULL, return RESULT_FAILURE, "Output images pointer cannot be NULL");
-
-    file_names image_file_names = { 0 };
-    if (find_files_with_extension(image_directory, (string)CSTR(".png"), &allocators->temp, &image_file_names) != RESULT_SUCCESS) {
-        BUG("No .png image files found in directory: %.*s", image_directory.length, image_directory.text);
-        return RESULT_FAILURE;
-    }
-
-    file_ordering image_ordering = { 0 };
-    create_file_ordering(&image_file_names, &image_ordering);
-    out_images->count = image_ordering.num_valid;
-
-    for (uint32_t i = 0; i < image_file_names.count; ++i) {
-        uint32_t image_index = image_ordering.index_by_file_name[i];
-        if (image_index == FILE_ORDERING_INVALID_INDEX) {
-            continue; // file name marked as invalid (not starting with a digit)
-        }
-
-        if (image_index >= MAX_IMAGES) {
-            BUG("Image index %u is out of bounds (max %u)", image_index, MAX_IMAGES);
-            continue;
-        }
-
-        string image_file_content = { 0 };
-        if (read_entire_file(image_file_names.elements[i], &allocators->perm, &image_file_content) != RESULT_SUCCESS) {
-            BUG("Failed to read image file: %.*s", image_file_names.elements[i].length, image_file_names.elements[i].text);
-            continue;
-        }
-
-        int32_t width = 0;
-        int32_t height = 0;
-        int32_t channels_in_file = 0;
-        uint8_t* image_data = stbi_load_from_memory(image_file_content.text, image_file_content.length, &width, &height, &channels_in_file, STBI_rgb_alpha);
-        if (!image_data) {
-            BUG("Failed to load image file: %.*s", image_file_names.elements[i].length, image_file_names.elements[i].text);
-            continue;
-        }
-        out_images->elements[image_index] = (image){
-            .data = image_data,
-            .width = (uint32_t)width,
-            .height = (uint32_t)height,
-            .channels = (uint32_t)channels_in_file,
-        };
-    }
-
-    return RESULT_SUCCESS;
-}
-
 result load_sounds(memory_allocators* allocators, sounds* out_sounds) {
     ASSERT(allocators != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
     ASSERT(out_sounds != NULL, return RESULT_FAILURE, "Output sounds pointer cannot be NULL");
     memset(out_sounds, 0, sizeof(sounds));
 
     string executable_directory = get_executable_directory(&allocators->temp);
-    string sound_directory = concat(executable_directory, (string)CSTR("assets\\sounds\\"), &allocators->temp);
+    string sound_directory = concat(executable_directory, (string)CSTR("assets\\"), &allocators->temp);
     return create_sounds_from_files(allocators, sound_directory, out_sounds);
 }
 
-result load_images(memory_allocators* allocators, images* out_images) {
-    ASSERT(allocators != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
-    ASSERT(out_images != NULL, return RESULT_FAILURE, "Output images pointer cannot be NULL");
-    memset(out_images, 0, sizeof(images));
+result load_first_image(bump_allocator* allocator, image* out_image) {
+    ASSERT(allocator != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
+    ASSERT(out_image != NULL, return RESULT_FAILURE, "Output image pointer cannot be NULL");
+    string executable_directory = get_executable_directory(allocator);
+    string image_directory = concat(executable_directory, (string)CSTR("assets\\"), allocator);
 
-    string executable_directory = get_executable_directory(&allocators->temp);
-    string image_directory = concat(executable_directory, (string)CSTR("assets\\images\\"), &allocators->temp);
-    return create_images_from_files(allocators, image_directory, out_images);
-}
-
-void unload_images(images* images) {
-    ASSERT(images != NULL, return, "Images pointer cannot be NULL");
-
-    for (uint32_t i = 0; i < images->count; ++i) {
-        if (images->elements[i].data != NULL) {
-            stbi_image_free(images->elements[i].data);
-        }
+    string image_path;
+    if (find_first_file_with_extension(image_directory, (string)CSTR(".png"), allocator, &image_path) != RESULT_SUCCESS) {
+        BUG("No .png image files found in directory: %.*s", image_directory.length, image_directory.text);
+        return RESULT_FAILURE;
     }
 
-    memset(images, 0, sizeof(images));
+    int width, height, channels;
+    unsigned char* image_data = stbi_load(image_path.text, &width, &height, &channels, STBI_rgb_alpha);
+    if (!image_data) {
+        BUG("Failed to load image: %.*s", image_path.length, image_path.text);
+        return RESULT_FAILURE;
+    }
+
+    out_image->data = image_data;
+    out_image->width = (uint32_t)width;
+    out_image->height = (uint32_t)height;
+    out_image->channels = 4; // STBI_rgb_alpha forces 4 channels
+    return RESULT_SUCCESS;
+}
+
+void unload_image(image* image) {
+    ASSERT(image != NULL, return, "Image pointer cannot be NULL");
+    if (image->data) {
+        stbi_image_free(image->data);
+    }
+    memset(image, 0, sizeof(*image));
 }

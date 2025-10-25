@@ -14,6 +14,7 @@
 #define BREAKPOINT() ((void)0)
 #endif
 
+
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 
@@ -39,6 +40,13 @@
 #endif
 
 #define STATIC_ASSERT(condition, message) typedef uint8_t static_assertion_##message[(condition) ? 1 : -1];
+
+#ifdef WIN32
+#define DLL_EXPORT __declspec(dllexport)
+#else
+#define DLL_EXPORT
+#endif
+
 typedef enum {
     RESULT_FAILURE,
     RESULT_SUCCESS

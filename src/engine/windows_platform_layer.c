@@ -10,12 +10,9 @@
 
 // Audio API:
 #include <xaudio2.h>
-
-//#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
 #include "geometry.h"
 #include "platform_layer.h"
-#include "asset.h"
+#include "asset_files.h"
 
 //#define GAME_LOOP
 #ifdef GAME_LOOP
@@ -137,6 +134,7 @@ result append_last_string(string* original, string to_append, bump_allocator* al
     ASSERT(original != NULL, return RESULT_FAILURE, "Original string pointer cannot be NULL");
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
     ASSERT(original->text == (const char*)((uint8_t*)allocator->base + (allocator->used_bytes - original->length)), return RESULT_FAILURE, "Original string must be the last allocation in the bump allocator to use string_append");
+    
     char* new_text = (char*)bump_allocate(allocator, 1, to_append.length);
     if (new_text == NULL) {
         BUG("Failed to allocate memory for string append.");
@@ -271,6 +269,7 @@ result find_first_file_with_extension(string directory, string extension, bump_a
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
     ASSERT(out_full_path != NULL, return RESULT_FAILURE, "Output full path cannot be NULL");
     ASSERT(extension.length > 0, return RESULT_FAILURE, "Extension cannot be empty");
+
     char search_path[MAX_PATH];
     snprintf(search_path, MAX_PATH, "%.*s*%.*s", directory.length, directory.text, extension.length, extension.text);
     WIN32_FIND_DATAA find_data;
@@ -281,7 +280,6 @@ result find_first_file_with_extension(string directory, string extension, bump_a
     }
 
     do {
-
         if (!(find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
             // Found a file, construct the full path:
             size_t full_path_length = directory.length + strlen(find_data.cFileName);
@@ -364,6 +362,7 @@ result write_entire_file(string path, const void* data, size_t size) {
         CloseHandle(file_handle);
         return RESULT_FAILURE;
     }
+
     CloseHandle(file_handle);
     return RESULT_SUCCESS;
 }
@@ -1053,25 +1052,16 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
 
     // Sprite Sheet Texture:
     {
-        string current_directory = get_executable_directory(temp);
-        string sprite_sheet_path = { 0 };
-        if (find_first_file_with_extension(current_directory, (string)CSTR(".png"), temp, &sprite_sheet_path) != RESULT_SUCCESS) {
-            BUG("Failed to find a .png file in the executable directory: %.*s", current_directory.length, current_directory.text);
+        image image;
+        if (load_first_image(temp, &image) != RESULT_SUCCESS) {
+            BUG("Failed to load first image");
             return RESULT_FAILURE;
         }
-
-        int image_width, image_height, image_channels;
-        unsigned char* image_data = stbi_load(sprite_sheet_path.text, &image_width, &image_height, &image_channels, STBI_rgb_alpha);
-        if (!image_data) {
-            BUG("Failed to load image: %.*s", sprite_sheet_path.length, sprite_sheet_path.text);
-            return RESULT_FAILURE;
-        }
-
-        graphics->sprite_sheet_size = (vector2int){ image_width, image_height };
+        graphics->sprite_sheet_size = (vector2int){ image.width, image.height };
 
         D3D11_TEXTURE2D_DESC texture_desc = { 0 };
-        texture_desc.Width = image_width;
-        texture_desc.Height = image_height;
+        texture_desc.Width = image.width;
+        texture_desc.Height = image.height;
         texture_desc.MipLevels = 1;
         texture_desc.ArraySize = 1;
         texture_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -1083,12 +1073,13 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
         texture_desc.SampleDesc.Quality = 0;
 
         D3D11_SUBRESOURCE_DATA init_data = { 0 };
-        init_data.pSysMem = image_data;
-        init_data.SysMemPitch = image_width * 4; // 4 bytes per pixel (RGBA)
+        init_data.pSysMem = image.data;
+        init_data.SysMemPitch = image.width * 4; // 4 bytes per pixel (RGBA)
         init_data.SysMemSlicePitch = 0;
 
         hr = graphics->device->lpVtbl->CreateTexture2D(graphics->device, &texture_desc, &init_data, &graphics->sprite_sheet_texture);
-        stbi_image_free(image_data);
+        unload_image(&image);
+
         if (FAILED(hr)) {
             BUG("Failed to create texture for sprite sheet. HRESULT: 0x%08X", hr);
             return RESULT_FAILURE;
