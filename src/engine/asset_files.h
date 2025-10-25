@@ -34,7 +34,7 @@ typedef struct {
 
 DECLARE_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS);
 
-result load_sounds(memory_allocators* allocators, sounds* out_sounds);
+void load_sounds(memory_allocators* allocators, sounds* out_sounds);
 result load_first_image(bump_allocator* allocator, image* out_image);
 void unload_image(image* image);
 #endif // ASSET_FILES_H

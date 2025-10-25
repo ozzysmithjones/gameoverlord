@@ -134,7 +134,7 @@ result append_last_string(string* original, string to_append, bump_allocator* al
     ASSERT(original != NULL, return RESULT_FAILURE, "Original string pointer cannot be NULL");
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
     ASSERT(original->text == (const char*)((uint8_t*)allocator->base + (allocator->used_bytes - original->length)), return RESULT_FAILURE, "Original string must be the last allocation in the bump allocator to use string_append");
-    
+
     char* new_text = (char*)bump_allocate(allocator, 1, to_append.length);
     if (new_text == NULL) {
         BUG("Failed to allocate memory for string append.");
@@ -1399,10 +1399,7 @@ static result create_audio(memory_allocators* allocators, audio* audio) {
         return RESULT_FAILURE;
     }
 
-    if (load_sounds(allocators, &audio->sounds) != RESULT_SUCCESS) {
-        BUG("Failed to load sounds for audio system");
-        return RESULT_FAILURE;
-    }
+    load_sounds(allocators, &audio->sounds);
 
 #ifndef NDEBUG
     // ASSERT that all sounds use the master wave format:

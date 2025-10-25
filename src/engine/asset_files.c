@@ -137,14 +137,13 @@ static void create_file_ordering(file_names* file_names, file_ordering* out_orde
 #endif
 }
 
-static result create_sounds_from_files(memory_allocators* allocators, string sound_directory, sounds* out_sounds) {
-    ASSERT(allocators != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
-    ASSERT(out_sounds != NULL, return RESULT_FAILURE, "Output sounds pointer cannot be NULL");
+static void create_sounds_from_files(memory_allocators* allocators, string sound_directory, sounds* out_sounds) {
+    ASSERT(allocators != NULL, return, "Memory allocators pointer cannot be NULL");
+    ASSERT(out_sounds != NULL, return, "Output sounds pointer cannot be NULL");
 
     file_names sound_file_names = { 0 };
     if (find_files_with_extension(sound_directory, (string)CSTR(".wav"), &allocators->temp, &sound_file_names) != RESULT_SUCCESS) {
-        BUG("No .wav sound files found in directory: %.*s", sound_directory.length, sound_directory.text);
-        return RESULT_FAILURE;
+        return;
     }
 
     file_ordering sound_ordering = { 0 };
@@ -168,18 +167,16 @@ static result create_sounds_from_files(memory_allocators* allocators, string sou
             continue;
         }
     }
-
-    return RESULT_SUCCESS;
 }
 
-result load_sounds(memory_allocators* allocators, sounds* out_sounds) {
-    ASSERT(allocators != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
-    ASSERT(out_sounds != NULL, return RESULT_FAILURE, "Output sounds pointer cannot be NULL");
+void load_sounds(memory_allocators* allocators, sounds* out_sounds) {
+    ASSERT(allocators != NULL, return, "Memory allocators pointer cannot be NULL");
+    ASSERT(out_sounds != NULL, return, "Output sounds pointer cannot be NULL");
     memset(out_sounds, 0, sizeof(sounds));
 
     string executable_directory = get_executable_directory(&allocators->temp);
     string sound_directory = concat(executable_directory, (string)CSTR("assets\\"), &allocators->temp);
-    return create_sounds_from_files(allocators, sound_directory, out_sounds);
+    create_sounds_from_files(allocators, sound_directory, out_sounds);
 }
 
 result load_first_image(bump_allocator* allocator, image* out_image) {
