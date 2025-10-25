@@ -137,7 +137,7 @@ static void create_file_ordering(file_names* file_names, file_ordering* out_orde
 #endif
 }
 
-static void create_sounds_from_files(memory_allocators* allocators, string sound_directory, sounds* out_sounds) {
+static void create_sounds_from_directory(memory_allocators* allocators, string sound_directory, sounds* out_sounds) {
     ASSERT(allocators != NULL, return, "Memory allocators pointer cannot be NULL");
     ASSERT(out_sounds != NULL, return, "Output sounds pointer cannot be NULL");
 
@@ -169,17 +169,17 @@ static void create_sounds_from_files(memory_allocators* allocators, string sound
     }
 }
 
-void load_sounds(memory_allocators* allocators, sounds* out_sounds) {
+void create_sounds_from_files(memory_allocators* allocators, sounds* out_sounds) {
     ASSERT(allocators != NULL, return, "Memory allocators pointer cannot be NULL");
     ASSERT(out_sounds != NULL, return, "Output sounds pointer cannot be NULL");
     memset(out_sounds, 0, sizeof(sounds));
 
     string executable_directory = get_executable_directory(&allocators->temp);
     string sound_directory = concat(executable_directory, (string)CSTR("assets\\"), &allocators->temp);
-    create_sounds_from_files(allocators, sound_directory, out_sounds);
+    create_sounds_from_directory(allocators, sound_directory, out_sounds);
 }
 
-result load_first_image(bump_allocator* allocator, image* out_image) {
+result create_image_from_first_file(bump_allocator* allocator, image* out_image) {
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
     ASSERT(out_image != NULL, return RESULT_FAILURE, "Output image pointer cannot be NULL");
     string executable_directory = get_executable_directory(allocator);
@@ -205,7 +205,7 @@ result load_first_image(bump_allocator* allocator, image* out_image) {
     return RESULT_SUCCESS;
 }
 
-void unload_image(image* image) {
+void destroy_image(image* image) {
     ASSERT(image != NULL, return, "Image pointer cannot be NULL");
     if (image->data) {
         stbi_image_free(image->data);

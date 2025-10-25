@@ -1053,7 +1053,7 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
     // Sprite Sheet Texture:
     {
         image image;
-        if (load_first_image(temp, &image) != RESULT_SUCCESS) {
+        if (create_image_from_first_file(temp, &image) != RESULT_SUCCESS) {
             BUG("Failed to load first image");
             return RESULT_FAILURE;
         }
@@ -1078,7 +1078,7 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
         init_data.SysMemSlicePitch = 0;
 
         hr = graphics->device->lpVtbl->CreateTexture2D(graphics->device, &texture_desc, &init_data, &graphics->sprite_sheet_texture);
-        unload_image(&image);
+        destroy_image(&image);
 
         if (FAILED(hr)) {
             BUG("Failed to create texture for sprite sheet. HRESULT: 0x%08X", hr);
@@ -1399,7 +1399,7 @@ static result create_audio(memory_allocators* allocators, audio* audio) {
         return RESULT_FAILURE;
     }
 
-    load_sounds(allocators, &audio->sounds);
+    create_sounds_from_files(allocators, &audio->sounds);
 
 #ifndef NDEBUG
     // ASSERT that all sounds use the master wave format:

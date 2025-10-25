@@ -34,7 +34,19 @@ typedef struct {
 
 DECLARE_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS);
 
-void load_sounds(memory_allocators* allocators, sounds* out_sounds);
-result load_first_image(bump_allocator* allocator, image* out_image);
-void unload_image(image* image);
+/*
+Some notes on the memory allocation strategy used here:
+- For images, we use stb_image to load the image data directly into heap memory managed by stb_image.
+  The image struct holds a pointer to this data, and we provide a function to free it when done.
+- For sounds, we read the entire WAV file into a buffer allocated from the provided bump allocator.
+  The sound struct holds a pointer to this buffer along with its size and format information.
+
+So you only need to destroy the image data using destroy_image when done with an image.
+The sound data will be automatically freed when the bump allocator is reset or destroyed.
+In the future it might be preferable to make a png reader (instead of stb_image) so we can put all image and sound data in bump allocators for consistency.
+*/
+
+void create_sounds_from_files(memory_allocators* allocators, sounds* out_sounds);
+result create_image_from_first_file(bump_allocator* allocator, image* out_image);
+void destroy_image(image* image);
 #endif // ASSET_FILES_H
