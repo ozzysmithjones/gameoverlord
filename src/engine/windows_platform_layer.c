@@ -1163,6 +1163,7 @@ static void draw_graphics(graphics* graphics) {
         BUG("Failed to map constant buffer. HRESULT: 0x%08X", hr);
         return;
     }
+
     memcpy(mapped_resource.pData, &graphics->view_projection, sizeof(matrix));
     graphics->context->lpVtbl->Unmap(graphics->context, (ID3D11Resource*)graphics->constant_buffer, 0);
     graphics->context->lpVtbl->VSSetConstantBuffers(graphics->context, 0, 1, &graphics->constant_buffer);
@@ -1339,76 +1340,6 @@ typedef struct {
     uint32_t size;
 } wav_file_chunk_header;
 
-/*
-static result load_wav_file(const uint8_t* file_data, size_t file_size, sound* out_sound) {
-    ASSERT(file_data != NULL, return RESULT_FAILURE, "File data pointer cannot be NULL");
-    ASSERT(file_size > sizeof(wav_file_chunk_header) + 4, return RESULT_FAILURE, "File size is too small to be a valid WAV file");
-    ASSERT(out_sound != NULL, return RESULT_FAILURE, "Output sound pointer cannot be NULL");
-    memset(out_sound, 0, sizeof(*out_sound));
-
-    uint8_t* cursor = (uint8_t*)file_data;
-    uint8_t* file_end = (uint8_t*)file_data + file_size;
-
-    // Read RIFF chunk
-    wav_file_chunk_header* riff_chunk = (wav_file_chunk_header*)cursor;
-    if (memcmp(&riff_chunk->id_chars, "RIFF", 4) != 0) {
-        BUG("Invalid WAV file: Missing RIFF chunk");
-        return RESULT_FAILURE;
-    }
-
-    cursor += sizeof(wav_file_chunk_header);
-    if (cursor + 4 > file_end || memcmp(cursor, "WAVE", 4) != 0) {
-        BUG("Invalid WAV file: Missing WAVE format identifier");
-        return RESULT_FAILURE;
-    }
-
-    cursor += 4; // Move past "WAVE" format identifier
-
-    // Read chunks until we find "fmt " and "data"
-    bool fmt_chunk_found = false;
-    bool data_chunk_found = false;
-
-    while (cursor + sizeof(wav_file_chunk_header) <= file_end) {
-        wav_file_chunk_header* chunk_header = (wav_file_chunk_header*)cursor;
-        cursor += sizeof(wav_file_chunk_header);
-
-        if (memcmp(&chunk_header->id_chars, "fmt ", 4) == 0) {
-            // Read format chunk
-            if (chunk_header->size < 16 || cursor + chunk_header->size > file_end) {
-                BUG("Invalid WAV file: Corrupted fmt chunk");
-                return RESULT_FAILURE;
-            }
-
-            out_sound->wave_format = (WAVEFORMATEX*)cursor;
-            fmt_chunk_found = true;
-            if (fmt_chunk_found && data_chunk_found) {
-                return RESULT_SUCCESS;
-            }
-        }
-        else if (memcmp(&chunk_header->id_chars, "data", 4) == 0) {
-            // Read data chunk
-            if (cursor + chunk_header->size > file_end) {
-                BUG("Invalid WAV file: Corrupted data chunk");
-                return RESULT_FAILURE;
-            }
-
-            out_sound->data_size = chunk_header->size;
-            out_sound->data = cursor;
-
-            data_chunk_found = true;
-            if (fmt_chunk_found && data_chunk_found) {
-                return RESULT_SUCCESS;
-            }
-        }
-
-        cursor += chunk_header->size;
-    }
-
-    BUG("Invalid WAV file: Missing fmt or data chunk");
-    return RESULT_FAILURE;
-}
-*/
-
 static result create_sound_players(audio* audio, sound_player* out_sound_players) {
     ASSERT(audio != NULL, return RESULT_FAILURE, "Audio pointer cannot be NULL");
     memset(out_sound_players, 0, sizeof(MAX_CONCURRENT_SOUNDS * sizeof(sound_player)));
@@ -1494,11 +1425,6 @@ static result create_audio(memory_allocators* allocators, audio* audio) {
             "Sound %u has a different wave format than the master wave format", i);
     }
 #endif
-
-    if (create_sound_players(audio, audio->sound_players) != RESULT_SUCCESS) {
-        BUG("Failed to create sound players for audio system");
-        return RESULT_FAILURE;
-    }
 
     return RESULT_SUCCESS;
 }
