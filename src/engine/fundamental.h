@@ -49,13 +49,22 @@ typedef struct {
     uint32_t length;
 } string;
 
+result directory_of(string file_path, string* out_directory);
+
 #define CSTR(string_literal) { .text = string_literal, .length = sizeof(string_literal) - 1 }
 static inline bool string_equal(string a, string b) {
     return a.length == b.length && (a.length == 0 || memcmp(a.text, b.text, a.length) == 0);
 }
 
-#define ARRAY_LENGTH(array) (sizeof(array) / sizeof((array)[0]))
+#define FORMAT_STRING_MAX 256
+typedef struct {
+    char text[FORMAT_STRING_MAX];
+    uint32_t length;
+} string_format_buffer;
 
+result string_format(string_format_buffer* out_format_string, string format, ...);
+
+#define ARRAY_LENGTH(array) (sizeof(array) / sizeof((array)[0]))
 #define DECLARE_SLICE(name, element_type) \
     typedef struct { \
         element_type* elements; \

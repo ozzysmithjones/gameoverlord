@@ -11,10 +11,11 @@
 // Audio API:
 #include <xaudio2.h>
 
-#define STB_IMAGE_IMPLEMENTATION
+//#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "geometry.h"
 #include "platform_layer.h"
+#include "asset.h"
 
 //#define GAME_LOOP
 #ifdef GAME_LOOP
@@ -112,6 +113,40 @@ void* bump_allocate(bump_allocator* allocator, size_t alignment, size_t bytes) {
     return (LPBYTE)allocator->base + aligned;
 }
 
+string concat(string a, string b, bump_allocator* allocator) {
+    ASSERT(allocator != NULL, return ((string) {
+        .text = NULL, .length = 0
+    }), "Allocator cannot be NULL");
+    uint32_t total_length = a.length + b.length;
+    char* combined_text = (char*)bump_allocate(allocator, 1, total_length + 1);
+    if (combined_text == NULL) {
+        BUG("Failed to allocate memory for concatenated string.");
+        return (string) {
+            .text = NULL, .length = 0
+        };
+    }
+    memcpy(combined_text, a.text, a.length);
+    memcpy(combined_text + a.length, b.text, b.length);
+    combined_text[total_length] = '\0';
+    return (string) {
+        .text = combined_text, .length = total_length
+    };
+}
+
+result append_last_string(string* original, string to_append, bump_allocator* allocator) {
+    ASSERT(original != NULL, return RESULT_FAILURE, "Original string pointer cannot be NULL");
+    ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
+    ASSERT(original->text == (const char*)((uint8_t*)allocator->base + (allocator->used_bytes - original->length)), return RESULT_FAILURE, "Original string must be the last allocation in the bump allocator to use string_append");
+    char* new_text = (char*)bump_allocate(allocator, 1, to_append.length);
+    if (new_text == NULL) {
+        BUG("Failed to allocate memory for string append.");
+        return RESULT_FAILURE;
+    }
+    memcpy(new_text, to_append.text, to_append.length);
+    original->length += to_append.length;
+    return RESULT_SUCCESS;
+}
+
 /*
 =============================================================================================================================
     Time
@@ -156,7 +191,6 @@ void update_clock(clock* clock) {
     clock->previous_update_time = current_time_seconds;
 }
 
-
 /*
 =============================================================================================================================
     File I/O
@@ -171,6 +205,7 @@ string get_executable_directory(bump_allocator* allocator) {
             .text = "", .length = 0
         };
     }
+
     DWORD length = GetModuleFileNameA(NULL, path, MAX_PATH);
     allocator->used_bytes -= (MAX_PATH - length - 1); // Free unused memory from bump allocator.
 
@@ -188,11 +223,13 @@ string get_executable_directory(bump_allocator* allocator) {
             .text = "", .length = 0
         };
     }
+
     return (string) {
         .text = path, .length = length
     };
 }
 
+IMPLEMENT_CAPPED_ARRAY(file_names, string, MAX_FILE_NAMES)
 result find_files_with_extension(string directory, string extension, bump_allocator* allocator, file_names* out_file_names) {
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Allocator cannot be NULL");
     ASSERT(out_file_names != NULL, return RESULT_FAILURE, "Output file names cannot be NULL");
@@ -217,15 +254,17 @@ result find_files_with_extension(string directory, string extension, bump_alloca
                 FindClose(find_handle);
                 return RESULT_FAILURE;
             }
+
             snprintf(full_path, full_path_length + 1, "%.*s%s", directory.length, directory.text, find_data.cFileName);
             string file_name = {
                 .text = full_path,
                 .length = (uint32_t)full_path_length
             };
-            out_file_names->elements[out_file_names->count] = file_name;
-            ++out_file_names->count;
+
+            file_names_append(out_file_names, file_name);
         }
     } while (FindNextFileA(find_handle, &find_data));
+    return RESULT_SUCCESS;
 }
 
 result find_first_file_with_extension(string directory, string extension, bump_allocator* allocator, string* out_full_path) {
@@ -318,6 +357,7 @@ result write_entire_file(string path, const void* data, size_t size) {
         BUG("Failed to open file for writing: %.*s", path.length, path.text);
         return RESULT_FAILURE;
     }
+
     DWORD bytes_written;
     if (!WriteFile(file_handle, data, (DWORD)size, &bytes_written, NULL) || bytes_written != (DWORD)size) {
         BUG("Failed to write file: %.*s", path.length, path.text);
@@ -1225,14 +1265,6 @@ static void destroy_graphics(graphics* graphics) {
 =============================================================================================================================
 */
 
-IMPLEMENT_CAPPED_ARRAY(sound_files, string, MAX_SOUNDS);
-
-typedef struct {
-    uint8_t* data;
-    size_t data_size;
-    WAVEFORMATEX* wave_format;
-} sound;
-
 typedef enum {
     FADE_NONE = 0,
     FADE_IN = 1 << 0,
@@ -1290,9 +1322,6 @@ static IXAudio2VoiceCallbackVtbl sound_player_vtable = {
     .OnVoiceError = sound_player_on_voice_error
 };
 
-DECLARE_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS);
-IMPLEMENT_CAPPED_ARRAY(sounds, sound, MAX_SOUNDS);
-
 typedef struct audio {
     IXAudio2* xaudio2;
     IXAudio2MasteringVoice* mastering_voice;
@@ -1310,16 +1339,8 @@ typedef struct {
     uint32_t size;
 } wav_file_chunk_header;
 
+/*
 static result load_wav_file(const uint8_t* file_data, size_t file_size, sound* out_sound) {
-    /*
-     WAV file is seperated into a series of chunks. Each chunk has a header that specifies the chunk ID and size of the rest of the chunk (in bytes).
-     We need three chunks to load a basic PCM WAV file:
-        1. "RIFF" chunk: This is the main chunk that identifies the file as a WAV file. It contains the overall size of the file and the format type ("WAVE").
-        2. "fmt " chunk: This chunk contains the format information for the audio data, such as sample rate, bit depth, number of channels, and audio format (PCM).
-        3. "data" chunk: This chunk contains the actual audio sample data.
-    We can load a WAV file by reading these chunks in sequence (making sure that we check the IDs to ensure we are reading the correct chunks).
-    */
-
     ASSERT(file_data != NULL, return RESULT_FAILURE, "File data pointer cannot be NULL");
     ASSERT(file_size > sizeof(wav_file_chunk_header) + 4, return RESULT_FAILURE, "File size is too small to be a valid WAV file");
     ASSERT(out_sound != NULL, return RESULT_FAILURE, "Output sound pointer cannot be NULL");
@@ -1386,40 +1407,7 @@ static result load_wav_file(const uint8_t* file_data, size_t file_size, sound* o
     BUG("Invalid WAV file: Missing fmt or data chunk");
     return RESULT_FAILURE;
 }
-
-static void create_sounds(audio* audio, sound_files* sound_files, memory_allocators* allocators, sounds* out_sounds) {
-    ASSERT(audio != NULL, return, "Audio pointer cannot be NULL");
-    ASSERT(sound_files != NULL, return, "Sound files pointer cannot be NULL");
-    ASSERT(allocators != NULL, return, "Memory allocators pointer cannot be NULL");
-    ASSERT(out_sounds != NULL, return, "Output sounds pointer cannot be NULL");
-    out_sounds->count = 0;
-    char full_path_buffer[MAX_PATH];
-
-    for (uint32_t i = 0; i < sound_files->count; ++i) {
-        string sound_file_path = sound_files->elements[i];
-        string executable_directory = get_executable_directory(&allocators->temp);
-        int length = sprintf_s(full_path_buffer, MAX_PATH, "%.*s//%.*s", executable_directory.length, executable_directory.text, sound_file_path.length, sound_file_path.text);
-        ASSERT(length > 0 && length < MAX_PATH, continue, "Failed to construct full path for sound file: %.*s", sound_file_path.length, sound_file_path.text);
-        string full_path = { .text = full_path_buffer, .length = (size_t)length };
-
-        string file_text;
-        if (read_entire_file(full_path, &allocators->perm, &file_text) != RESULT_SUCCESS) {
-            BUG("Failed to read sound file: %.*s", sound_file_path.length, sound_file_path.text);
-            continue;
-        }
-
-        sound new_sound;
-        if (load_wav_file(file_text.text, file_text.length, &new_sound) != RESULT_SUCCESS) {
-            BUG("Failed to load WAV file: %.*s", sound_file_path.length, sound_file_path.text);
-            continue;
-        }
-
-        if (sounds_append(out_sounds, new_sound) != RESULT_SUCCESS) {
-            BUG("Failed to append sound to audio system");
-            continue;
-        }
-    }
-}
+*/
 
 static result create_sound_players(audio* audio, sound_player* out_sound_players) {
     ASSERT(audio != NULL, return RESULT_FAILURE, "Audio pointer cannot be NULL");
@@ -1448,8 +1436,7 @@ static result create_sound_players(audio* audio, sound_player* out_sound_players
     return RESULT_SUCCESS;
 }
 
-static result create_audio(sound_files* sound_files, memory_allocators* allocators, audio* audio) {
-    ASSERT(sound_files != NULL, return RESULT_FAILURE, "Sound files pointer cannot be NULL");
+static result create_audio(memory_allocators* allocators, audio* audio) {
     ASSERT(audio != NULL, return RESULT_FAILURE, "Audio pointer cannot be NULL");
     ASSERT(allocators != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
     memset(audio, 0, sizeof(*audio));
@@ -1490,16 +1477,19 @@ static result create_audio(sound_files* sound_files, memory_allocators* allocato
         return RESULT_FAILURE;
     }
 
-    create_sounds(audio, sound_files, allocators, &audio->sounds);
+    if (load_sounds(allocators, &audio->sounds) != RESULT_SUCCESS) {
+        BUG("Failed to load sounds for audio system");
+        return RESULT_FAILURE;
+    }
 
 #ifndef NDEBUG
     // ASSERT that all sounds use the master wave format:
     for (uint32_t i = 0; i < audio->sounds.count; ++i) {
         sound* sound = &audio->sounds.elements[i];
-        ASSERT(sound->wave_format->wFormatTag == audio->master_wave_format.wFormatTag &&
-            sound->wave_format->nChannels == audio->master_wave_format.nChannels &&
-            sound->wave_format->nSamplesPerSec == audio->master_wave_format.nSamplesPerSec &&
-            sound->wave_format->wBitsPerSample == audio->master_wave_format.wBitsPerSample,
+        ASSERT(sound->format.audio_format == audio->master_wave_format.wFormatTag &&
+            sound->format.num_channels == audio->master_wave_format.nChannels &&
+            sound->format.sample_rate == audio->master_wave_format.nSamplesPerSec &&
+            sound->format.bits_per_sample == audio->master_wave_format.wBitsPerSample,
             return RESULT_FAILURE,
             "Sound %u has a different wave format than the master wave format", i);
     }
@@ -1879,17 +1869,18 @@ static result create_game(void) {
         return RESULT_FAILURE;
     }
 
+    game.game_state = out_params.game_state;
+
     if (create_graphics(&game.window, out_params.virtual_resolution, &game.memory_allocators.temp, &game.graphics) != RESULT_SUCCESS) {
         BUG("Failed to create graphics context.");
         return RESULT_FAILURE;
     }
 
-    if (create_audio(&out_params.sound_files, &game.memory_allocators, &game.audio) != RESULT_SUCCESS) {
+    if (create_audio(&game.memory_allocators, &game.audio) != RESULT_SUCCESS) {
         BUG("Failed to create audio context.");
         return RESULT_FAILURE;
     }
 
-    game.game_state = out_params.game_state;
     return RESULT_SUCCESS;
 }
 

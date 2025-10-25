@@ -16,9 +16,6 @@ __declspec(dllexport) result init(init_in_params* in, init_out_params* out) {
 
     out->game_state = (void*)state;
     out->virtual_resolution = (vector2int){ 600, 400 };
-
-    sound_files_append(&out->sound_files, (string)CSTR("FirstSteps.wav"));
-    sound_files_append(&out->sound_files, (string)CSTR("Jump.wav"));
     return RESULT_SUCCESS;
 }
 
