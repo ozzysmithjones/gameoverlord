@@ -175,7 +175,7 @@ void create_sounds_from_files(memory_allocators* allocators, sounds* out_sounds)
     memset(out_sounds, 0, sizeof(sounds));
 
     string executable_directory = get_executable_directory(&allocators->temp);
-    string sound_directory = concat(executable_directory, (string)CSTR("assets\\"), &allocators->temp);
+    string sound_directory = concat(executable_directory, (string)CSTR(ASSET_DIRECTORY), &allocators->temp);
     create_sounds_from_directory(allocators, sound_directory, out_sounds);
 }
 
@@ -183,7 +183,7 @@ result create_image_from_first_file(bump_allocator* allocator, image* out_image)
     ASSERT(allocator != NULL, return RESULT_FAILURE, "Memory allocators pointer cannot be NULL");
     ASSERT(out_image != NULL, return RESULT_FAILURE, "Output image pointer cannot be NULL");
     string executable_directory = get_executable_directory(allocator);
-    string image_directory = concat(executable_directory, (string)CSTR("assets\\"), allocator);
+    string image_directory = concat(executable_directory, (string)CSTR(ASSET_DIRECTORY), allocator);
 
     string image_path;
     if (find_first_file_with_extension(image_directory, (string)CSTR(".png"), allocator, &image_path) != RESULT_SUCCESS) {

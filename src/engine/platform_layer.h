@@ -85,6 +85,31 @@ typedef struct {
     int32_t y;
 } vector2int;
 
+typedef struct {
+    float r;
+    float g;
+    float b;
+    float a;
+} color;
+
+static inline color color_from_uint8(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    return (color){
+        .r = (float)r / 255.0f,
+        .g = (float)g / 255.0f,
+        .b = (float)b / 255.0f,
+        .a = (float)a / 255.0f
+    };
+}
+
+static inline color color_from_uint32(uint32_t rgba) {
+    return color_from_uint8(
+        (uint8_t)((rgba >> 24) & 0xFF),
+        (uint8_t)((rgba >> 16) & 0xFF),
+        (uint8_t)((rgba >> 8) & 0xFF),
+        (uint8_t)(rgba & 0xFF)
+    );
+}
+
 #ifndef MAX_SPRITES
 #define MAX_SPRITES 32
 #endif
@@ -93,6 +118,7 @@ typedef struct {
 #define MAX_IMAGES 8
 #endif
 
+void draw_background_color(graphics* graphics, float r, float g, float b, float a);
 void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int texcoord, vector2int texscale, float rotation);
 vector2int get_actual_resolution(graphics* graphics);
 vector2int get_virtual_resolution(graphics* graphics);

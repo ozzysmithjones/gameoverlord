@@ -9,6 +9,10 @@ and so it makes sense to centralise the functions that might execute at runtime 
 
 #include "platform_layer.h"
 
+#ifndef ASSET_DIRECTORY
+#define ASSET_DIRECTORY "assets\\"
+#endif
+
 typedef struct {
     void* data;
     uint32_t channels;
@@ -43,7 +47,7 @@ Some notes on the memory allocation strategy used here:
 
 So you only need to destroy the image data using destroy_image when done with an image.
 The sound data will be automatically freed when the bump allocator is reset or destroyed.
-In the future it might be preferable to make a png reader (instead of stb_image) so we can put all image and sound data in bump allocators for consistency.
+In the future it might be preferable to make a png reader (instead of using stb_image) so we can put all image and sound data in bump allocators for consistency.
 */
 
 void create_sounds_from_files(memory_allocators* allocators, sounds* out_sounds);

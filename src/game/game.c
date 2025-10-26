@@ -35,6 +35,8 @@ DLL_EXPORT result update(update_params* in) {
         play_sound(in->audio, 1, 0, 0.0f);
     }
 
+    color background_color = color_from_uint32(0xFF1A1AFF);
+    draw_background_color(in->graphics, background_color.r, background_color.g, background_color.b, background_color.a);
     draw_sprite(
         in->graphics,
         state->position,
@@ -49,10 +51,9 @@ DLL_EXPORT result update(update_params* in) {
     },
         0.0f
     );
-
     return RESULT_SUCCESS;
 }
 
-__declspec(dllexport) void shutdown(shutdown_params* in) {
+DLL_EXPORT void shutdown(shutdown_params* in) {
 
 }

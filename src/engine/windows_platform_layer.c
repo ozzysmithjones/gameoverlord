@@ -695,6 +695,12 @@ typedef struct graphics {
     D3D11_VIEWPORT viewport;
 } graphics;
 
+void draw_background_color(graphics* graphics, float r, float g, float b, float a) {
+    ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
+    float clear_color[4] = { r, g, b, a };
+    graphics->context->lpVtbl->ClearRenderTargetView(graphics->context, graphics->render_target_view, clear_color);
+}
+
 void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int texcoord, vector2int texscale, float rotation) {
     ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
     ASSERT(graphics->sprite_instances.elements != NULL, return, "Sprite instances array not initialized");
@@ -715,7 +721,6 @@ vector2int get_virtual_resolution(graphics* graphics) {
     }), "Graphics pointer cannot be NULL");
     return graphics->virtual_resolution;
 }
-
 
 vector2int get_actual_resolution(graphics* graphics) {
     ASSERT(graphics != NULL, return ((vector2int) {
@@ -1160,8 +1165,8 @@ static void draw_graphics(graphics* graphics) {
     graphics->context->lpVtbl->VSSetConstantBuffers(graphics->context, 0, 1, &graphics->constant_buffer);
 
     // Clear render target
-    float clear_color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
-    graphics->context->lpVtbl->ClearRenderTargetView(graphics->context, graphics->render_target_view, clear_color);
+    // float clear_color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
+    // graphics->context->lpVtbl->ClearRenderTargetView(graphics->context, graphics->render_target_view, clear_color);
 
     // Draw call
     UINT vertex_count = 6; // Two triangles per quad
@@ -1864,7 +1869,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             HRESULT hr = game.graphics.context->lpVtbl->Map(game.graphics.context, (ID3D11Resource*)game.graphics.instance_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &game.graphics.instance_buffer_mapping);
             if (FAILED(hr)) {
                 BUG("Failed to map instance buffer. HRESULT: 0x%08X", hr);
-                goto cleanup;
+                continue;
             }
 
             game.graphics.sprite_instances.elements = (sprite_instance*)game.graphics.instance_buffer_mapping.pData;
