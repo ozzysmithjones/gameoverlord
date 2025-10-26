@@ -16,14 +16,15 @@ file(GLOB_RECURSE GAME_SOURCES
     ${GAME_DIR}/*.h
    )
 
+
 SET(HOT_RELOAD OFF)
 
 if(HOT_RELOAD)
     add_executable(engine WIN32 ${ENGINE_SOURCES})
-  
+
     # Set the game engine to be the main game-loop and the hot-reload host
     target_compile_definitions(engine PRIVATE GAME_LOOP HOT_RELOAD_HOST)
-    target_link_libraries(engine d3d11 dxgi d3dcompiler xaudio2)
+    target_link_libraries(engine PRIVATE d3d11 dxgi d3dcompiler xaudio2)
     
     # Set the game to be a shared library that can be hot-reloaded (game-loop is disabled while it is handled by the game engine)
     add_library(game SHARED ${ENGINE_SOURCES} ${GAME_SOURCES})
@@ -39,7 +40,8 @@ if(HOT_RELOAD)
     target_link_options(game PRIVATE "/DEBUG:NONE")
 else()
     add_executable(game WIN32 ${ENGINE_SOURCES} ${GAME_SOURCES})
+
     target_compile_definitions(game PRIVATE GAME_LOOP)
     target_include_directories(game PRIVATE ${ENGINE_DIR})
-    target_link_libraries(game d3d11 dxgi d3dcompiler xaudio2)
+    target_link_libraries(game PRIVATE d3d11 dxgi d3dcompiler xaudio2)
 endif()

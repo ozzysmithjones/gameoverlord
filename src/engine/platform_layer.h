@@ -32,13 +32,27 @@ static inline void reset_bump_allocator(bump_allocator* allocator) {
     allocator->used_bytes = 0;
 }
 
-typedef struct {
+typedef struct memory_allocators {
     /* Temporary memory allocator, used for allocations that last for one frame. */
     bump_allocator temp;
 
     /* Permanent memory allocator, used for allocations that last for the entire program lifetime. */
     bump_allocator perm;
 } memory_allocators;
+
+
+/*
+=============================================================================================================================
+    String Manipulation (depending on memory allocation)
+=============================================================================================================================
+*/
+
+// makes a copy of the string 'a' and 'b combined together (more expensive than string append but more flexible)
+string concat(string a, string b, bump_allocator* allocator);
+
+// Assumes that the original is the last allocation to the bump allocator (more efficient than concat)
+result append_last_string(string* original, string to_append, bump_allocator* allocator);
+
 
 
 /*
@@ -71,10 +85,40 @@ typedef struct {
     int32_t y;
 } vector2int;
 
+typedef struct {
+    float r;
+    float g;
+    float b;
+    float a;
+} color;
+
+static inline color color_from_uint8(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    return (color){
+        .r = (float)r / 255.0f,
+        .g = (float)g / 255.0f,
+        .b = (float)b / 255.0f,
+        .a = (float)a / 255.0f
+    };
+}
+
+static inline color color_from_uint32(uint32_t rgba) {
+    return color_from_uint8(
+        (uint8_t)((rgba >> 24) & 0xFF),
+        (uint8_t)((rgba >> 16) & 0xFF),
+        (uint8_t)((rgba >> 8) & 0xFF),
+        (uint8_t)(rgba & 0xFF)
+    );
+}
+
 #ifndef MAX_SPRITES
 #define MAX_SPRITES 32
 #endif
 
+#ifndef MAX_IMAGES
+#define MAX_IMAGES 8
+#endif
+
+void draw_background_color(graphics* graphics, float r, float g, float b, float a);
 void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int texcoord, vector2int texscale, float rotation);
 vector2int get_actual_resolution(graphics* graphics);
 vector2int get_virtual_resolution(graphics* graphics);
@@ -108,8 +152,6 @@ vector2int get_virtual_resolution(graphics* graphics);
 #ifndef AUDIO_DEFAULT_VOLUME
 #define AUDIO_DEFAULT_VOLUME 1.0f
 #endif
-
-DECLARE_CAPPED_ARRAY(sound_files, string, MAX_SOUNDS);
 
 typedef enum {
     PLAYING_SOUND_NONE = 0,
@@ -255,14 +297,14 @@ bool is_key_down(input* input_state, keyboard_key key);
 bool is_key_held_down(input* input_state, keyboard_key key);
 bool is_key_up(input* input_state, keyboard_key key);
 
-
 /*
 =============================================================================================================================
     File I/O
 =============================================================================================================================
 */
 
-DECLARE_SLICE(file_names, string);
+#define MAX_FILE_NAMES 64
+DECLARE_CAPPED_ARRAY(file_names, string, MAX_FILE_NAMES);
 
 string get_executable_directory(bump_allocator* allocator);
 result find_files_with_extension(string directory, string extension, bump_allocator* allocator, file_names* out_file_names);
@@ -270,7 +312,6 @@ result find_first_file_with_extension(string directory, string extension, bump_a
 bool file_exists(string path);
 result read_entire_file(string path, bump_allocator* allocator, string* out_file_contents);
 result write_entire_file(string path, const void* data, size_t size);
-
 
 /*
 =============================================================================================================================
@@ -354,11 +395,6 @@ typedef struct {
     You need to provide your desired virtual resolution here and the platform layer will handle the rest (scaling up while keeping the aspect ratio the same, letterboxing as needed and so on).
     */
     vector2int virtual_resolution;
-
-    // The sound files to search for (array of file names). Note that these sound files will be searched in the same directory as the executable.
-    sound_files sound_files;
-
-    // file_names sprite_sheet_files; TODO: support multiple sprite sheets 
 } init_out_params;
 
 #endif // PLATFORM_LAYER_H
