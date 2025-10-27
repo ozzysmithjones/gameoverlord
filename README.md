@@ -94,7 +94,7 @@ The game engine provides what is known as "arena allocators" or "bump allocators
 
 ## Error Handling
 
-This game engine uses a different strategy with errors depending on the build type of your program. If you are compiling a development/debug build - all errors result in an immediate breakpoint and a handy error message - allowing the programmer to quickly diagnose and fix issues as soon as they happen. This is a "fail fast" approach to handling errors. In a release build, the strategy switches, and instead of trapping the program the errors switch to reporting an error message and performing graceful error-recoveries as a fallback. 
+This game engine uses a different strategy with errors depending on the build type of your program. If you are compiling a development/debug build - all errors result in an immediate breakpoint and a handy error message - allowing the programmer to quickly diagnose and fix issues as soon as they happen. This is a "fail fast" approach to handling errors. In a release build, the strategy switches, and instead of trapping the program the errors switch to reporting an error message and performing graceful error-recoveries. 
 
 The assert macro looks like this:
 
