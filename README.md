@@ -8,8 +8,11 @@
 ## Features
 
 Hot Reloading - You can build your game while it is still running and the changes will update live. (No need to close and re-open the game to see your changes). This hot-reloading feature needs to be explicitly enabled in the CMakeLists.txt at the root of the project (just change HOT_RELOAD to ON).
+
 Audio - `play_sound` function for playing sounds.
+
 Graphics - `draw_sprite` function for drawing sprites.
+
 User input - Simple functions for checking user input like `is_key_down`, `is_key_up- and `is_key_held_down`.
 
 ## Project Structure
