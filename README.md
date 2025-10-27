@@ -18,6 +18,10 @@ The project is devided into two folders within src. The "engine" subfolder conta
 
 The "game" subfolder is where you would put your game specific code. Having the engine source code and the game source code side-by-side allows you to easily inspect both in the debugger whenever you need to. The CMakeLists.txt at the root of the project controls the building of the game and the engine. When hot-reloading is turned on, the game is built as a dynamically-linked library which can be reloaded at runtime. When hot-reloading is off, instead the game and the engine is built together as a single executable.
 
+## Set-up
+
+For now just clone/copy paste the contents of this repository somewhere and make your game in src/game/. In the future it might be possible to setup a program to setup projects but this is currently not implemented. This project depends on CMake (to build) a compiler that can compile C17, and only works on Windows. 
+
 ## Hot Reloading
 
 Hot-Reloading allows you to to build the game while it is still running and see the changes update live. The way that this works is that the game is compiled as a DLL (Dynamically linked library) that is linked with the engine at runtime. When your DLL is built, the engine detects the updated DLL file and unloads the current DLL (if one exists) and then re-directs function pointers to point to the functions in the new DLL. It's worth pointing out here, that since the DLL is reloaded, any static values in your game will not persist across hot-reloads (static variables will reset to zero). You can get around this by allocating your values on the heap instead using the provided memory allocators - these memory allocations will stay around even when the game is hot-reloaded. Just keep in mind that since the memory allocations stay around, changes to the memory layouts of these heap-allocated resources (like adding more elements to a struct) will likely not work because it will still use the heap-allocated resources of the previous DLL (with the previous memory layouts). Hot-reloading is useful for making quick edits of code and stack variables and seeing the changes instantly refresh - but for anything persistent recommend closing and re-starting the application instead.
@@ -73,13 +77,21 @@ DLL_EXPORT void shutdown(shutdown_params* in) {
 
 }
 ```
+## Virtual Resolution
+
+This game engine is designed for 2D pixel-art games. In the init() function you specify the virtual resolution that you want your game to target. This is the imaginary resolution of your games display. The game engine will handle scaling up your game to the actual resolution used by your monitor (letterboxing as needed). Modern screens have much more pixels than old video game consoles, so rendering pixel art at the actual resolution would make them look tiny. 
+
+## Asset Management
+
+The game engine looks for assets (currently just png files and wav files) in the assets folder located with your executable. Currently, it just searches for the first .png file and uses that as the spritesheet with which to render your games sprites. All .wav files in the asset folder are aggregated and sorted by the preceeding number in their name. This allows you to play sounds in the game by number/enum (instead of by name text, which could easily be misspelled).
+
 ## Memory Management
 
-The game engine provides what is known as "arena allocators" or "bump allocators" for memory management. A bump allocator is a reserved block of memory with a pointer pointing to the beginning of the block. Whenever you need more memory, the pointer is simply bumped forward, committing more pages of memory from the operating system as needed. This is a very simple approach to memory management - you can bump the pointer forward whenever you need more memory and you can reset it back to the start whenever you wish to "free" everything. The advantage of this is that you do not need to concern yourself with memory management at all - you simply free everything all at once whenever there is a good time. The main downside is that you cannot recycle/free memory with the same level of fine granularity as the heap. The game engine provides two bump allocators - the permanent allocator is for any allocations that you want to persist throughout the whole game, and the temp allocator is reset every frame automatically. Use the temp allocator for any temporary allocations, like temporary string manipulation, which would normally be a pain in C.
+The game engine provides what is known as "arena allocators" or "bump allocators" for memory management. A bump allocator is a reserved block of memory with a pointer pointing to the beginning of the block. Whenever you need more memory, the pointer is simply bumped forward, committing more pages of memory from the operating system as needed. This is a very simple approach to memory management - you can bump the pointer forward whenever you need more memory and you can reset it back to the start whenever you wish to "free" everything. The advantage of this is that you do not need to concern yourself with memory management much at all - you simply free everything all at once whenever there is a good time. The main downside is that you cannot recycle/free memory with the same level of fine granularity as the heap. The game engine provides two bump allocators - the permanent allocator is for any allocations that you want to persist throughout the whole game, and the temp allocator is reset every frame automatically. Use the temp allocator for any temporary allocations, like temporary string manipulation, which would normally be a pain to do in C with manual memory management.
 
 ## Error Handling
 
-This game engine uses a different strategy with errors depending on the build type of your program. If you are compiling a development/debug build - all errors result in an immediate breakpoint and a handy error message - allowing the programmer to quickly diagnose and fix issues as soon as they happen. This is a "fail fast" approach to handling errors. In a release build, the strategy switches, and instead of trapping the program the errors switch to reporting an error message and performing graceful error-recoveries. 
+This game engine uses a different strategy with errors depending on the build type of your program. If you are compiling a development/debug build - all errors result in an immediate breakpoint and a handy error message - allowing the programmer to quickly diagnose and fix issues as soon as they happen. This is a "fail fast" approach to handling errors. In a release build, the strategy switches, and instead of trapping the program the errors switch to reporting an error message and performing graceful error-recoveries as a fallback. 
 
 The assert macro looks like this:
 
@@ -101,4 +113,4 @@ The assert macro looks like this:
     }
 ```
 
-The assert macro has a condition (like normal) but it also has a fallback recovery behaviour to perform in a release build. In release, asserts do not dissapear but instead perform the fallback behaviour in the event of an error. This means that your program can "Fail Fast" in development builds but be "Fault Tolerant" in release builds, configuring behaviour to match the need of the target audience. These macros can of course be adjusted to suit your application.
+The assert macro has a condition (like normal) but it also has a fallback recovery behaviour to perform in a release build. In release, asserts do not dissapear but instead perform the fallback behaviour in the event of an error. This means that your program can "Fail Fast" in development builds but also be "Fault Tolerant" in release builds, configuring behaviour to match the need of the target audience. These macros can of course be adjusted to suit your application.
