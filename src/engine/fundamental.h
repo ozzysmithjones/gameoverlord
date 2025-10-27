@@ -23,7 +23,8 @@
 #ifndef NDEBUG
 #define BUG(...) printf(__FILE__":" TOSTRING(__LINE__) " Bug: " __VA_ARGS__); fflush(stdout); BREAKPOINT()
 #else
-#define BUG(...) ((void)0)
+#include <stdio.h>
+#define BUG(...) printf(__FILE__":" TOSTRING(__LINE__) " Bug: " __VA_ARGS__);
 #endif
 #endif
 
