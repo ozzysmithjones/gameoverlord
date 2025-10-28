@@ -487,7 +487,6 @@ static result create_window(window* w, const char* title, uint32_t width, uint32
     }
 
     w->mode = mode;
-
     w->handle = CreateWindowEx(
         0,
         class_name,
@@ -589,11 +588,7 @@ bool is_key_up(input* input_state, keyboard_key key) {
 #pragma region shaders
 string vertex_shader_source =
 CSTR(STRINGIFY(
-    cbuffer view_projection : register(b0) {
-    matrix view_proj;
-};
-
-struct VS_INPUT {
+    struct VS_INPUT {
     // Vertex data
     float2 vertex_position : POSITION;
     float2 vertex_texcoord : TEXCOORD;
@@ -623,7 +618,7 @@ PS_INPUT main(VS_INPUT input) {
     float2 world_position = scaled_position + input.sprite_position;
 
     // Use the view_proj matrix for proper transformation
-    output.position = mul(float4(world_position, 0.0f, 1.0f), view_proj);
+    output.position = float4(world_position, 0.0, 1.0);
     output.texcoord = input.sprite_texcoord + (input.vertex_texcoord * input.sprite_src_scale);
     return output;
 }
@@ -688,8 +683,6 @@ typedef struct graphics {
     ID3D11Buffer* instance_buffer;
     D3D11_MAPPED_SUBRESOURCE instance_buffer_mapping;
     ID3D11Buffer* vertex_buffer;
-    ID3D11Buffer* constant_buffer;
-    matrix view_projection;
     sprite_instances sprite_instances;
     vector2int virtual_resolution;
     D3D11_VIEWPORT viewport;
@@ -708,8 +701,11 @@ void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int
 
     sprite_instance* instance = &graphics->sprite_instances.elements[graphics->sprite_instances.count];
     ++graphics->sprite_instances.count;
-    instance->position = position;
-    instance->dst_scale = scale;
+
+    // convert to normalized device coordinates
+
+    instance->position = (vector2){ (position.x / (float)graphics->virtual_resolution.x) * 2.0f - 1.0f,  1.0f - (position.y / (float)graphics->virtual_resolution.y) * 2.0f };
+    instance->dst_scale = (vector2){ (scale.x / (float)graphics->virtual_resolution.x) * 2.0f, (scale.y / (float)graphics->virtual_resolution.y) * 2.0f };
     instance->src_scale = (vector2){ (float)texscale.x / (float)graphics->sprite_sheet_size.x, (float)texscale.y / (float)graphics->sprite_sheet_size.y };
     instance->texcoord = (vector2){ (float)texcoord.x / (float)graphics->sprite_sheet_size.x, (float)texcoord.y / (float)graphics->sprite_sheet_size.y };
     instance->rotation = rotation;
@@ -960,24 +956,6 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
         graphics->context->lpVtbl->PSSetShader(graphics->context, graphics->pixel_shader, NULL, 0);
     }
 
-    // constant buffer for view-projection matrix in vertex shader:
-    {
-        D3D11_BUFFER_DESC buffer_desc = { 0 };
-        buffer_desc.Usage = D3D11_USAGE_DYNAMIC;
-        buffer_desc.ByteWidth = sizeof(matrix);
-        buffer_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-        buffer_desc.MiscFlags = 0;
-        buffer_desc.StructureByteStride = 0;
-
-        hr = graphics->device->lpVtbl->CreateBuffer(graphics->device, &buffer_desc, NULL, &graphics->constant_buffer);
-        if (FAILED(hr)) {
-
-            BUG("Failed to create constant buffer. HRESULT: 0x%08X", hr);
-            return RESULT_FAILURE;
-        }
-    }
-
     // Vertex buffer for a quad (two triangles):
     {
 
@@ -1038,7 +1016,7 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
     // Sampler state:
     {
         D3D11_SAMPLER_DESC sampler_desc = { 0 };
-        sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
         sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
         sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
         sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
@@ -1145,28 +1123,12 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
         float blend_factor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         graphics->context->lpVtbl->OMSetBlendState(graphics->context, graphics->blend_state, blend_factor, 0xFFFFFFFF);
     }    // Use orthographic matrix for 2D rendering instead of identity
-    graphics->view_projection = matrix_transpose(orthographic_matrix(0.0f, (float)virtual_resolution.x, (float)virtual_resolution.y, 0.0f, -1.0f, 1.0f)); //identity_matrix();//orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f);
+    //graphics->view_projection = matrix_transpose(orthographic_matrix(0.0f, (float)virtual_resolution.x, (float)virtual_resolution.y, 0.0f, -1.0f, 1.0f)); //identity_matrix();//orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f);
     return RESULT_SUCCESS;
 }
 
 static void draw_graphics(graphics* graphics) {
     ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
-
-    // Update constant buffer with view-projection matrix
-    D3D11_MAPPED_SUBRESOURCE mapped_resource;
-    HRESULT hr = graphics->context->lpVtbl->Map(graphics->context, (ID3D11Resource*)graphics->constant_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_resource);
-    if (FAILED(hr)) {
-        BUG("Failed to map constant buffer. HRESULT: 0x%08X", hr);
-        return;
-    }
-
-    memcpy(mapped_resource.pData, &graphics->view_projection, sizeof(matrix));
-    graphics->context->lpVtbl->Unmap(graphics->context, (ID3D11Resource*)graphics->constant_buffer, 0);
-    graphics->context->lpVtbl->VSSetConstantBuffers(graphics->context, 0, 1, &graphics->constant_buffer);
-
-    // Clear render target
-    // float clear_color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
-    // graphics->context->lpVtbl->ClearRenderTargetView(graphics->context, graphics->render_target_view, clear_color);
 
     // Draw call
     UINT vertex_count = 6; // Two triangles per quad
@@ -1219,10 +1181,6 @@ static void destroy_graphics(graphics* graphics) {
     if (graphics->vertex_buffer) {
         graphics->vertex_buffer->lpVtbl->Release(graphics->vertex_buffer);
         graphics->vertex_buffer = NULL;
-    }
-    if (graphics->constant_buffer) {
-        graphics->constant_buffer->lpVtbl->Release(graphics->constant_buffer);
-        graphics->constant_buffer = NULL;
     }
     if (graphics->input_layout) {
         graphics->input_layout->lpVtbl->Release(graphics->input_layout);
