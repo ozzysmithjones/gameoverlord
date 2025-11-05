@@ -6,7 +6,6 @@
 #include "fundamental.h"
 #include "geometry.h"
 
-
 typedef struct input input;
 typedef struct graphics graphics;
 typedef struct audio audio;
@@ -54,13 +53,11 @@ string concat(string a, string b, bump_allocator* allocator);
 result append_last_string(string* original, string to_append, bump_allocator* allocator);
 
 
-
 /*
 =============================================================================================================================
     Time
 =============================================================================================================================
 */
-
 
 typedef struct {
     float frequency;
@@ -80,10 +77,7 @@ void update_clock(clock* clock);
 =============================================================================================================================
 */
 
-typedef struct {
-    int32_t x;
-    int32_t y;
-} vector2int;
+
 
 typedef struct {
     float r;
@@ -93,11 +87,11 @@ typedef struct {
 } color;
 
 static inline color color_from_uint8(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    return (color){
+    return (color) {
         .r = (float)r / 255.0f,
-        .g = (float)g / 255.0f,
-        .b = (float)b / 255.0f,
-        .a = (float)a / 255.0f
+            .g = (float)g / 255.0f,
+            .b = (float)b / 255.0f,
+            .a = (float)a / 255.0f
     };
 }
 
@@ -119,7 +113,8 @@ static inline color color_from_uint32(uint32_t rgba) {
 #endif
 
 void draw_background_color(graphics* graphics, float r, float g, float b, float a);
-void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int texcoord, vector2int texscale, float rotation);
+void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int sample_point, vector2int sample_scale, float rotation);
+void draw_projected_sprite(graphics* graphics, const camera_2d* projection_camera, vector2 world_position, vector2 world_scale, vector2int sample_point, vector2int sample_scale, float rotation);
 vector2int get_actual_resolution(graphics* graphics);
 vector2int get_virtual_resolution(graphics* graphics);
 
@@ -367,7 +362,7 @@ typedef struct {
     audio* audio;
     memory_allocators* memory_allocators;
     input* input;
-    clock clock;
+    clock time;
 } update_params;
 
 typedef struct {

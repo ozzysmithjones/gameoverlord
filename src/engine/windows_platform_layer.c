@@ -167,7 +167,7 @@ result create_clock(clock* clock) {
     }
 
     clock->frequency = (float)frequency.QuadPart;
-    clock->creation_time = (float)current_time.QuadPart;
+    clock->creation_time = (float)current_time.QuadPart / clock->frequency;
     clock->time_since_creation = 0.0f;
     clock->time_since_previous_update = 0.0f;
 
@@ -392,7 +392,11 @@ typedef struct {
     HDC hdc;
     input input_state;
     window_mode mode;
+
+    graphics* graphics; // for window resize handling (optional, can be NULL)
 } window;
+
+static void handle_window_resize(graphics* graphics, uint32_t min_x, uint32_t min_y, uint32_t max_x, uint32_t max_y);
 
 static LRESULT window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     window* w = (window*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
@@ -408,12 +412,23 @@ static LRESULT window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_CLOSE:
         ASSERT(w != NULL, return 0, "Window internals cannot be NULL in WM_CLOSE");
         w->input_state.closed_window = true;
+        w->graphics = NULL;
         PostQuitMessage(0);
         break;
     case WM_DESTROY:
         ASSERT(w != NULL, return 0, "Window internals cannot be NULL in WM_DESTROY");
         w->input_state.closed_window = true;
+        w->graphics = NULL;
         break;
+    case WM_WINDOWPOSCHANGED: {
+        ASSERT(w != NULL, return 0, "Window internals cannot be NULL in WM_WINDOWPOSCHANGED");
+        if (w->graphics != NULL) {
+            RECT rect = { 0 };
+            if (GetClientRect(hwnd, &rect)) {
+                handle_window_resize(w->graphics, rect.left, rect.top, rect.right, rect.bottom);
+            }
+        }
+    } break;
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
         ASSERT(w != NULL, return 0, "Window internals cannot be NULL in WM_KEYDOWN/WM_SYSKEYDOWN");
@@ -694,7 +709,7 @@ void draw_background_color(graphics* graphics, float r, float g, float b, float 
     graphics->context->lpVtbl->ClearRenderTargetView(graphics->context, graphics->render_target_view, clear_color);
 }
 
-void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int texcoord, vector2int texscale, float rotation) {
+void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int sample_point, vector2int sample_scale, float rotation) {
     ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
     ASSERT(graphics->sprite_instances.elements != NULL, return, "Sprite instances array not initialized");
     ASSERT(graphics->sprite_instances.count < MAX_SPRITES, return, "Exceeded maximum number of sprites per frame (either increase MAX_SPRITES or draw less sprites per frame)");
@@ -705,10 +720,27 @@ void draw_sprite(graphics* graphics, vector2 position, vector2 scale, vector2int
     // convert to normalized device coordinates
 
     instance->position = (vector2){ (position.x / (float)graphics->virtual_resolution.x) * 2.0f - 1.0f,  1.0f - (position.y / (float)graphics->virtual_resolution.y) * 2.0f };
-    instance->dst_scale = (vector2){ (scale.x / (float)graphics->virtual_resolution.x) * 2.0f, (scale.y / (float)graphics->virtual_resolution.y) * 2.0f };
-    instance->src_scale = (vector2){ (float)texscale.x / (float)graphics->sprite_sheet_size.x, (float)texscale.y / (float)graphics->sprite_sheet_size.y };
-    instance->texcoord = (vector2){ (float)texcoord.x / (float)graphics->sprite_sheet_size.x, (float)texcoord.y / (float)graphics->sprite_sheet_size.y };
+    instance->dst_scale = (vector2){ (scale.x / (float)graphics->virtual_resolution.x), (scale.y / (float)graphics->virtual_resolution.y) };
+    instance->src_scale = (vector2){ (float)sample_scale.x / (float)graphics->sprite_sheet_size.x, (float)sample_scale.y / (float)graphics->sprite_sheet_size.y };
+    instance->texcoord = (vector2){ (float)sample_point.x / (float)graphics->sprite_sheet_size.x, (float)sample_point.y / (float)graphics->sprite_sheet_size.y };
     instance->rotation = rotation;
+}
+
+void draw_projected_sprite(graphics* graphics, const camera_2d* projection_camera, vector2 world_position, vector2 world_scale, vector2int sample_point, vector2int sample_scale, float rotation) {
+    ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
+    ASSERT(projection_camera != NULL, return, "Projection camera pointer cannot be NULL");
+
+    // Transform world position to screen space
+    vector2 screen_position = {
+        (world_position.x - projection_camera->position.x) * projection_camera->zoom + projection_camera->offset.x,
+        (world_position.y - projection_camera->position.y) * projection_camera->zoom + projection_camera->offset.y
+    };
+    vector2 screen_scale = {
+        world_scale.x * projection_camera->zoom,
+        world_scale.y * projection_camera->zoom
+    };
+
+    draw_sprite(graphics, screen_position, screen_scale, sample_point, sample_scale, rotation);
 }
 
 vector2int get_virtual_resolution(graphics* graphics) {
@@ -846,6 +878,14 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
     }
     // Set viewport:
     {
+        if (virtual_resolution.x == 0) {
+            virtual_resolution.x = size.width;
+        }
+
+        if (virtual_resolution.y == 0) {
+            virtual_resolution.y = size.height;
+        }
+
         graphics->virtual_resolution = virtual_resolution;
         float desired_aspect_ratio = (float)virtual_resolution.x / (float)virtual_resolution.y;
         float window_aspect_ratio = (float)size.width / (float)size.height;
@@ -1123,8 +1163,42 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
         float blend_factor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         graphics->context->lpVtbl->OMSetBlendState(graphics->context, graphics->blend_state, blend_factor, 0xFFFFFFFF);
     }    // Use orthographic matrix for 2D rendering instead of identity
+
+    window->graphics = graphics;
     //graphics->view_projection = matrix_transpose(orthographic_matrix(0.0f, (float)virtual_resolution.x, (float)virtual_resolution.y, 0.0f, -1.0f, 1.0f)); //identity_matrix();//orthographic_matrix(0.0f, (float)size.width, (float)size.height, 0.0f, -1.0f, 1.0f);
     return RESULT_SUCCESS;
+}
+
+static void handle_window_resize(graphics* graphics, uint32_t min_x, uint32_t min_y, uint32_t max_x, uint32_t max_y) {
+    ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
+    graphics->cached_window_size.width = max_x - min_x;
+    graphics->cached_window_size.height = max_y - min_y;
+
+    // recalculate viewport
+    float desired_aspect_ratio = (float)graphics->virtual_resolution.x / (float)graphics->virtual_resolution.y;
+    float window_aspect_ratio = (float)graphics->cached_window_size.width / (float)graphics->cached_window_size.height;
+    if (desired_aspect_ratio > window_aspect_ratio) {
+        // Bars on top and bottom
+        float viewport_height = ((float)graphics->cached_window_size.width / desired_aspect_ratio);
+        graphics->viewport = (D3D11_VIEWPORT){
+            0, (graphics->cached_window_size.height - viewport_height) / 2, (float)graphics->cached_window_size.width, viewport_height
+        };
+    }
+    else if (desired_aspect_ratio < window_aspect_ratio) {
+        // Bars on left and right
+        float viewport_width = ((float)graphics->cached_window_size.height * desired_aspect_ratio);
+        graphics->viewport = (D3D11_VIEWPORT){
+            (graphics->cached_window_size.width - viewport_width) / 2, 0, viewport_width, (float)graphics->cached_window_size.height
+        };
+    }
+    else {
+        // No bars
+        graphics->viewport = (D3D11_VIEWPORT){
+            0, 0, (float)graphics->cached_window_size.width, (float)graphics->cached_window_size.height
+        };
+    }
+
+    graphics->context->lpVtbl->RSSetViewports(graphics->context, 1, &graphics->viewport);
 }
 
 static void draw_graphics(graphics* graphics) {
@@ -1732,7 +1806,12 @@ static result create_game(void) {
         return RESULT_FAILURE;
     }
 
-    if (create_window(&game.window, "Game Overlord", 1280, 720, WINDOW_MODE_WINDOWED) != RESULT_SUCCESS) {
+    window_mode mode = WINDOW_MODE_WINDOWED;
+#if defined(NDEBUG)
+    mode = WINDOW_MODE_BORDERLESS_FULLSCREEN;
+#endif
+
+    if (create_window(&game.window, "Game Overlord", 1280, 720, mode) != RESULT_SUCCESS) {
         BUG("Failed to create application window.");
         return RESULT_FAILURE;
     }
@@ -1836,7 +1915,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
         { // Update game
             update_params update_params = { 0 };
-            update_params.clock = game.clock;
+            update_params.time = game.clock;
             update_params.graphics = &game.graphics;
             update_params.audio = &game.audio;
             update_params.memory_allocators = &game.memory_allocators;

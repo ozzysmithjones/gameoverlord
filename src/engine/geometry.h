@@ -4,10 +4,38 @@
 #include <math.h>
 #include <stdalign.h>
 #include <immintrin.h>
+#include "fundamental.h"
 
 #ifndef M_PI
-#define M_PI 3.14159265358979323846
+#define M_PI 3.14159265358979323846f
 #endif
+
+typedef struct {
+    int32_t x;
+    int32_t y;
+} vector2int;
+
+static inline vector2int vector2int_add(vector2int a, vector2int b) {
+    return (vector2int) {
+        a.x + b.x, a.y + b.y
+    };
+}
+
+static inline vector2int vector2int_sub(vector2int a, vector2int b) {
+    return (vector2int) {
+        a.x - b.x, a.y - b.y
+    };
+}
+
+static inline vector2int vector2int_scale(vector2int v, int32_t s) {
+    return (vector2int) {
+        v.x* s, v.y* s
+    };
+}
+
+static inline int32_t vector2int_length_squared(vector2int v) {
+    return v.x * v.x + v.y * v.y;
+}
 
 typedef struct {
     float x, y;
@@ -380,6 +408,100 @@ static inline bool circle_contains_point(circle c, vector2 point) {
     vector2 diff = vector2_sub(c.center, point);
     float dist_sq = vector2_length_squared(diff);
     return dist_sq < (c.radius * c.radius);
+}
+
+typedef struct camera_2d {
+    vector2 position;
+    vector2 offset;
+    float zoom;
+} camera_2d;
+
+static inline void project_2d_point(camera_2d camera, vector2 world_point, vector2* out_screen_point) {
+    ASSERT(out_screen_point != NULL, return, "Output screen point cannot be NULL");
+
+    out_screen_point->x = (world_point.x - camera.position.x) * camera.zoom + camera.offset.x;
+    out_screen_point->y = (world_point.y - camera.position.y) * camera.zoom + camera.offset.y;
+}
+
+static inline void project_2d_scale(camera_2d camera, vector2 world_scale, vector2* out_screen_scale) {
+    ASSERT(out_screen_scale != NULL, return, "Output screen scale cannot be NULL");
+
+    out_screen_scale->x = world_scale.x * camera.zoom;
+    out_screen_scale->y = world_scale.y * camera.zoom;
+}
+
+static inline void project_rect(camera_2d camera, rect world_rect, rect* out_screen_rect) {
+    ASSERT(out_screen_rect != NULL, return, "Output screen rect cannot be NULL");
+
+    out_screen_rect->min.x = (world_rect.min.x - camera.position.x) * camera.zoom + camera.offset.x;
+    out_screen_rect->min.y = (world_rect.min.y - camera.position.y) * camera.zoom + camera.offset.y;
+    out_screen_rect->max.x = (world_rect.max.x - camera.position.x) * camera.zoom + camera.offset.x;
+    out_screen_rect->max.y = (world_rect.max.y - camera.position.y) * camera.zoom + camera.offset.y;
+}
+
+
+/*
+=============================================================================================================================
+    Easing Functions for Animations
+=============================================================================================================================
+*/
+
+static inline float ease_in_sine(float t) {
+    return 1.0f - cosf((t * M_PI) / 2.0f);
+}
+
+static inline float ease_in_quad(float t) {
+    return t * t;
+}
+
+static inline float ease_in_cubic(float t) {
+    return t * t * t;
+}
+
+static inline float ease_out_sine(float t) {
+    return sinf((t * M_PI) / 2.0f);
+}
+
+static inline float ease_out_quad(float t) {
+    return t * (2.0f - t);
+}
+
+static inline float ease_out_cubic(float t) {
+    return 1.0f - powf(1.0f - t, 3);
+}
+
+static inline float ease_in_out_sine(float t) {
+    return -0.5f * (cosf(M_PI * t) - 1.0f);
+}
+
+static inline float ease_in_out_quad(float t) {
+    if (t < 0.5f) {
+        return 2.0f * t * t;
+    }
+    else {
+        return -1.0f + (4.0f * t) - (2.0f * t * t);
+    }
+}
+
+static inline float ease_in_out_cubic(float t) {
+    if (t < 0.5f) {
+        return 4.0f * t * t * t;
+    }
+    else {
+        float f = ((2.0f * t) - 2.0f);
+        return 0.5f * f * f * f + 1.0f;
+    }
+}
+
+static inline float inverse_lerp(float a, float b, float value) {
+    if (a == b) {
+        return 0.0f; // Avoid division by zero
+    }
+    return (value - a) / (b - a);
+}
+
+static inline float lerp(float a, float b, float t) {
+    return a + t * (b - a);
 }
 
 #endif // GEOMETRY_H

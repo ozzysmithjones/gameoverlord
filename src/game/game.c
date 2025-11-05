@@ -28,23 +28,14 @@ DLL_EXPORT result start(start_params* in) {
 DLL_EXPORT result update(update_params* in) {
     ASSERT(in->game_state, return RESULT_FAILURE, "Game state is NULL in update.");
     game_state* state = (game_state*)in->game_state;
-    state->position.x += 50.0f * in->clock.time_since_previous_update;
+    state->position.x += 50.0f * in->time.time_since_previous_update;
     if (is_key_down(in->input, KEY_SPACE)) {
         play_sound(in->audio, 1, 0, 0.0f);
     }
 
     color background_color = color_from_uint32(0x222323);
     draw_background_color(in->graphics, background_color.r, background_color.g, background_color.b, background_color.a);
-    draw_sprite(in->graphics, (vector2) {
-        128, 128
-    }, (vector2) {
-            128.0f, 128.0f
-        }, (vector2int) {
-                0, 0
-            }, (vector2int) {
-                    256, 256
-                }, 0.0f);
-                return RESULT_SUCCESS;
+    return RESULT_SUCCESS;
 }
 
 DLL_EXPORT void shutdown(shutdown_params* in) {

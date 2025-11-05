@@ -14,7 +14,6 @@
 #define BREAKPOINT() ((void)0)
 #endif
 
-
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 
@@ -96,6 +95,12 @@ result string_format(string_format_buffer* out_format_string, string format, ...
         ASSERT(index < slice->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %u", index, slice->count); \
         memcpy(&slice->elements[index], &value, sizeof(element_type)); \
         return RESULT_SUCCESS; \
+    }
+
+#define SLICE_ARRAY(slice_type, array) \
+    (slice_type) { \
+        .elements = (array), \
+        .count = ARRAY_LENGTH(array) \
     }
 
 #define DECLARE_CAPPED_ARRAY(name, element_type, capacity) \
