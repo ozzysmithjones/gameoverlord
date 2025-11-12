@@ -13,7 +13,7 @@ Audio - `play_sound` function for playing sounds.
 
 Graphics - `draw_sprite` function for drawing sprites.
 
-User input - Simple functions for checking user input like `is_key_down`, `is_key_up- and `is_key_held_down`.
+User input - Simple functions for checking user input like `is_key_down`, `is_key_up` and `is_key_held_down`.
 
 ## Project Structure
 
