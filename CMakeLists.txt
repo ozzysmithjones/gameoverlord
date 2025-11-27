@@ -17,7 +17,13 @@ file(GLOB_RECURSE GAME_SOURCES
    )
 
 
-SET(HOT_RELOAD ON)
+if (MSVC) 
+    add_compile_options(/W4)
+else()
+    add_compile_options(-Wall -Wextra)
+endif()
+
+option(HOT_RELOAD "Enable hot reloading of the game" ON)
 
 if(HOT_RELOAD)
     add_executable(engine WIN32 ${ENGINE_SOURCES})
@@ -38,10 +44,20 @@ if(HOT_RELOAD)
         PDB_OUTPUT_DIRECTORY "")
             
     target_link_options(game PRIVATE "/DEBUG:NONE")
-else()
-    add_executable(game WIN32 ${ENGINE_SOURCES} ${GAME_SOURCES})
 
-    target_compile_definitions(game PRIVATE GAME_LOOP)
-    target_include_directories(game PRIVATE ${ENGINE_DIR})
-    target_link_libraries(game PRIVATE d3d11 dxgi d3dcompiler xaudio2)
+    # Copy assets folder to output directory after build
+    add_custom_command(TARGET game POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:game>/assets)
+else()
+    add_executable(app WIN32 ${ENGINE_SOURCES} ${GAME_SOURCES})
+
+    target_compile_definitions(app PRIVATE GAME_LOOP)
+    target_include_directories(app PRIVATE ${ENGINE_DIR})
+    target_link_libraries(app PRIVATE d3d11 dxgi d3dcompiler xaudio2)
+
+    # Copy assets folder to output directory after build
+    add_custom_command(TARGET app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:app>/assets)
 endif()

@@ -77,8 +77,6 @@ void update_clock(clock* clock);
 =============================================================================================================================
 */
 
-
-
 typedef struct {
     float r;
     float g;
@@ -104,12 +102,10 @@ static inline color color_from_uint32(uint32_t rgba) {
     );
 }
 
+#define TARGET_FRAME_TIME (1.0f / 60.0f)
+
 #ifndef MAX_SPRITES
 #define MAX_SPRITES 32
-#endif
-
-#ifndef MAX_IMAGES
-#define MAX_IMAGES 8
 #endif
 
 void draw_background_color(graphics* graphics, float r, float g, float b, float a);

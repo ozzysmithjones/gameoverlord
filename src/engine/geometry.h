@@ -10,6 +10,12 @@
 #define M_PI 3.14159265358979323846f
 #endif
 
+#define VECTOR2_ZERO (vector2) {0.0f, 0.0f}
+#define VECTOR2_UP (vector2) {0.0f, 1.0f}
+#define VECTOR2_RIGHT (vector2) {1.0f, 0.0f}
+#define VECTOR2_DOWN (vector2) {0.0f, -1.0f}
+#define VECTOR2_LEFT (vector2) {-1.0f, 0.0f}
+
 typedef struct {
     int32_t x;
     int32_t y;
@@ -438,6 +444,60 @@ static inline void project_rect(camera_2d camera, rect world_rect, rect* out_scr
     out_screen_rect->max.x = (world_rect.max.x - camera.position.x) * camera.zoom + camera.offset.x;
     out_screen_rect->max.y = (world_rect.max.y - camera.position.y) * camera.zoom + camera.offset.y;
 }
+
+/*
+=============================================================================================================================
+    Rotation functions
+=============================================================================================================================
+*/
+
+static inline vector2 vector2_rotate(vector2 v, float angle_rad) {
+    float cos_theta = cosf(angle_rad);
+    float sin_theta = sinf(angle_rad);
+    return (vector2) {
+        v.x * cos_theta - v.y * sin_theta,
+            v.x * sin_theta + v.y * cos_theta
+    };
+}
+
+static inline vector2 vector2_rotate_around_point(vector2 point, vector2 pivot, float angle_rad) {
+    vector2 translated = vector2_sub(point, pivot);
+    vector2 rotated = vector2_rotate(translated, angle_rad);
+    return vector2_add(rotated, pivot);
+}
+
+static inline vector2 vector2_from_angle(float angle_rad) {
+    return (vector2) {
+        cosf(angle_rad), sinf(angle_rad)
+    };
+}
+
+static inline float rotation_radians_from_vector2(vector2 dir) {
+    return atan2f(dir.y, dir.x);
+}
+
+static inline float vector2_rotation_direction(vector2 from_dir, vector2 to_dir) {
+    // Calculate the 3D cross product (with z=0) to determine rotation direction
+    float cross_product_magnitude = from_dir.x * to_dir.y - from_dir.y * to_dir.x;
+    if (cross_product_magnitude > 0.0f) {
+        return 1.0f; // Counter-clockwise
+    }
+    else if (cross_product_magnitude < 0.0f) {
+        return -1.0f; // Clockwise
+    }
+    else {
+        return 0.0f; // No rotation needed
+    }
+}
+
+static inline float radians_to_degrees(float radians) {
+    return radians * (180.0f / M_PI);
+}
+
+static inline float degrees_to_radians(float degrees) {
+    return degrees * (M_PI / 180.0f);
+}
+
 
 
 /*

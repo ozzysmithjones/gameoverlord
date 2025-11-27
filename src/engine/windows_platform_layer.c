@@ -36,7 +36,6 @@ shutdown_function shutdown;
 #define HOT_RELOAD_DLL_PATH "game.dll"
 #define HOT_RELOAD_DLL_TEMP_PATH HOT_RELOAD_DLL_PATH ".temp"
 #endif
-
 #else
 // Function declarations for static linking without hot reloading:
 extern result init(init_in_params* in, init_out_params* out);
@@ -334,6 +333,7 @@ result read_entire_file(string path, bump_allocator* allocator, string* out_file
         CloseHandle(file_handle);
         return RESULT_FAILURE;
     }
+
     DWORD bytes_read;
     if (!ReadFile(file_handle, buffer, (DWORD)file_size.QuadPart, &bytes_read, NULL) || bytes_read != (DWORD)file_size.QuadPart) {
         BUG("Failed to read file: %.*s", path.length, path.text);
@@ -397,14 +397,13 @@ typedef struct {
 } window;
 
 static void handle_window_resize(graphics* graphics, uint32_t min_x, uint32_t min_y, uint32_t max_x, uint32_t max_y);
-
 static LRESULT window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     window* w = (window*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 
     switch (msg) {
     case WM_CREATE: {
         CREATESTRUCT* pCreate = (CREATESTRUCT*)(lParam);
-        window* w = (window*)(pCreate->lpCreateParams);
+        w = (window*)(pCreate->lpCreateParams);
         ASSERT(w != NULL, return -1, "Window internals cannot be NULL in WM_CREATE");
         SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)w);
         break;
@@ -676,6 +675,9 @@ typedef struct {
     size_t count;
 } sprite_instances;
 
+
+#define SWAPCHAIN_BUFFER_COUNT 2
+
 typedef struct graphics {
     vector2int sprite_sheet_size;
     window_size cached_window_size;
@@ -695,8 +697,11 @@ typedef struct graphics {
     ID3D11BlendState* blend_state;
     ID3D11Texture2D* sprite_sheet_texture;
     ID3D11ShaderResourceView* sprite_sheet_shader_resource;
+
+    ID3D11Buffer* instance_buffers[SWAPCHAIN_BUFFER_COUNT];
     ID3D11Buffer* instance_buffer;
     D3D11_MAPPED_SUBRESOURCE instance_buffer_mapping;
+
     ID3D11Buffer* vertex_buffer;
     sprite_instances sprite_instances;
     vector2int virtual_resolution;
@@ -802,6 +807,7 @@ static result compile_shader(const char* code, size_t code_length, LPCSTR shader
     return RESULT_SUCCESS;
 }
 
+
 static result create_graphics(window* window, vector2int virtual_resolution, bump_allocator* temp, graphics* graphics) {
     ASSERT(window != NULL, return RESULT_FAILURE, "Window pointer cannot be NULL");
     ASSERT(graphics != NULL, return RESULT_FAILURE, "Graphics pointer cannot be NULL");
@@ -821,7 +827,7 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
     graphics->cached_window_size = size;
 
     DXGI_SWAP_CHAIN_DESC swap_chain_desc = { 0 };
-    swap_chain_desc.BufferCount = 1;
+    swap_chain_desc.BufferCount = SWAPCHAIN_BUFFER_COUNT;
     swap_chain_desc.BufferDesc.Width = size.width;
     swap_chain_desc.BufferDesc.Height = size.height;
     swap_chain_desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -1034,23 +1040,27 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
 
     // sprite buffer for instance data will be set per draw call
     {
-        D3D11_BUFFER_DESC buffer_desc = { 0 };
-        buffer_desc.Usage = D3D11_USAGE_DYNAMIC;
-        buffer_desc.ByteWidth = (UINT)(sizeof(sprite_instance) * MAX_SPRITES); // Space for max_sprites sprites, can be adjusted as needed
-        buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-        buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-        buffer_desc.MiscFlags = 0;
-        buffer_desc.StructureByteStride = 0;
+        for (uint32_t i = 0; i < SWAPCHAIN_BUFFER_COUNT; ++i) {
+            D3D11_BUFFER_DESC buffer_desc = { 0 };
+            buffer_desc.Usage = D3D11_USAGE_DYNAMIC;
+            buffer_desc.ByteWidth = (UINT)(sizeof(sprite_instance) * MAX_SPRITES); // Space for max_sprites sprites, can be adjusted as needed
+            buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+            buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            buffer_desc.MiscFlags = 0;
+            buffer_desc.StructureByteStride = 0;
 
-        hr = graphics->device->lpVtbl->CreateBuffer(graphics->device, &buffer_desc, NULL, &graphics->instance_buffer);
-        if (FAILED(hr)) {
-            BUG("Failed to create instance vertex buffer. HRESULT: 0x%08X", hr);
-            return RESULT_FAILURE;
+            hr = graphics->device->lpVtbl->CreateBuffer(graphics->device, &buffer_desc, NULL, &graphics->instance_buffers[i]);
+            if (FAILED(hr)) {
+                BUG("Failed to create instance vertex buffer. HRESULT: 0x%08X", hr);
+                return RESULT_FAILURE;
+            }
         }
 
-        UINT stride = sizeof(sprite_instance);
-        UINT offset = 0;
-        graphics->context->lpVtbl->IASetVertexBuffers(graphics->context, 1, 1, &graphics->instance_buffer, &stride, &offset);
+        // Vertex buffer is instead set during draw call
+        // UINT stride = sizeof(sprite_instance);
+        // UINT offset = 0;
+        graphics->instance_buffer = graphics->instance_buffers[0];
+        // graphics->context->lpVtbl->IASetVertexBuffers(graphics->context, 1, 1, &graphics->instance_buffers[0], &stride, &offset);
     }
 
     // Sampler state:
@@ -1203,7 +1213,6 @@ static void handle_window_resize(graphics* graphics, uint32_t min_x, uint32_t mi
 
 static void draw_graphics(graphics* graphics) {
     ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
-
     // Draw call
     UINT vertex_count = 6; // Two triangles per quad
     UINT instance_count = (UINT)graphics->sprite_instances.count;
@@ -1211,15 +1220,19 @@ static void draw_graphics(graphics* graphics) {
     UINT start_instance_location = 0;
 
     if (instance_count > 0) {
-        graphics->context->lpVtbl->RSSetState(graphics->context, graphics->rasterizer_state);
-        graphics->context->lpVtbl->OMSetRenderTargets(graphics->context, 1, &graphics->render_target_view, NULL);
-
-        float blend_factor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-        graphics->context->lpVtbl->OMSetBlendState(graphics->context, graphics->blend_state, blend_factor, 0xFFFFFFFF);
+        UINT stride = sizeof(sprite_instance);
+        UINT offset = 0;
+        graphics->context->lpVtbl->IASetVertexBuffers(graphics->context, 1, 1, &graphics->instance_buffer, &stride, &offset);
         graphics->context->lpVtbl->DrawInstanced(graphics->context, vertex_count, instance_count, start_vertex_location, start_instance_location);
     }
 
-    graphics->swap_chain->lpVtbl->Present(graphics->swap_chain, 1, 0);
+    graphics->swap_chain->lpVtbl->Present(graphics->swap_chain, 0, 0);
+    if (graphics->instance_buffer == graphics->instance_buffers[0]) {
+        graphics->instance_buffer = graphics->instance_buffers[1];
+    }
+    else {
+        graphics->instance_buffer = graphics->instance_buffers[0];
+    }
 }
 
 static void destroy_graphics(graphics* graphics) {
@@ -1307,17 +1320,20 @@ typedef struct {
     float fade_duration;
     float fade_time_remaining;
     fade_mode fade_mode;
-    volatile uint32_t is_playing;
+    volatile long is_playing;
 } sound_player;
 
 // Callback implementations for sound_player (emulating polymorphism in C with a vtable):
 
 void sound_player_on_voice_processing_pass_start(IXAudio2VoiceCallback* this_callback, UINT32 bytes_required) {
     // No implementation needed for this example
+    (void)this_callback;
+    (void)bytes_required;
 }
 
 void sound_player_on_voice_processing_pass_end(IXAudio2VoiceCallback* this_callback) {
     // No implementation needed for this example
+    (void)this_callback;
 }
 
 void sound_player_on_stream_end(IXAudio2VoiceCallback* this_callback) {
@@ -1326,19 +1342,24 @@ void sound_player_on_stream_end(IXAudio2VoiceCallback* this_callback) {
 }
 
 void sound_player_on_buffer_start(IXAudio2VoiceCallback* this_callback, void* p_buffer_context) {
-    // sound_player* this_sound_player = (sound_player*)this_callback;
-    // this_sound_player->is_playing = 1;
+    (void)this_callback;
+    (void)p_buffer_context;
 }
 
 void sound_player_on_buffer_end(IXAudio2VoiceCallback* this_callback, void* p_buffer_context) {
+    (void)this_callback;
+    (void)p_buffer_context;
 }
 
 void sound_player_on_loop_end(IXAudio2VoiceCallback* this_callback, void* p_buffer_context) {
-    // No implementation needed for this example
+    (void)this_callback;
+    (void)p_buffer_context;
 }
 
 void sound_player_on_voice_error(IXAudio2VoiceCallback* this_callback, void* p_buffer_context, HRESULT error) {
-    // No implementation needed for this example
+    (void)this_callback;
+    (void)p_buffer_context;
+    (void)error;
 }
 
 static IXAudio2VoiceCallbackVtbl sound_player_vtable = {
@@ -1551,13 +1572,13 @@ result play_sound(audio* audio, uint32_t sound_index, playing_sound_flags flags,
 
 static void update_audio(audio* audio, float delta_time) {
     ASSERT(audio != NULL, return, "Audio pointer cannot be NULL");
-
     for (uint32_t i = 0; i < MAX_CONCURRENT_SOUNDS; ++i) {
         sound_player* sound_player = &audio->sound_players[i];
         if (sound_player->sound == NULL) {
             continue;
         }
 
+        ASSERT(sound_player->source_voice != NULL, continue, "Sound player's source voice cannot be NULL");
         if (!sound_player->is_playing) {
             sound_player->source_voice->lpVtbl->Stop(sound_player->source_voice, 0, 0);
             sound_player->source_voice->lpVtbl->FlushSourceBuffers(sound_player->source_voice);
@@ -1588,9 +1609,11 @@ void stop_sound(audio* audio, uint32_t sound_index, stopping_mode mode, float fa
         sound_player* sound_player = &audio->sound_players[i];
         if (sound_player->sound == &audio->sounds.elements[sound_index]) {
             if (fade_out_duration > 0.0f) {
-                sound_player->fade_mode = FADE_OUT;
-                sound_player->fade_duration = fade_out_duration;
-                sound_player->fade_time_remaining = fade_out_duration;
+                if (sound_player->fade_mode != FADE_OUT) {
+                    sound_player->fade_mode = FADE_OUT;
+                    sound_player->fade_duration = fade_out_duration;
+                    sound_player->fade_time_remaining = fade_out_duration;
+                }
             }
             else {
                 InterlockedExchange(&sound_player->is_playing, 0);
@@ -1612,7 +1635,6 @@ void stop_sound(audio* audio, uint32_t sound_index, stopping_mode mode, float fa
     Hot Reload
 =============================================================================================================================
 */
-
 
 #ifdef HOT_RELOAD_HOST
 static HMODULE app_dll = NULL;
@@ -1826,7 +1848,6 @@ static result create_game(void) {
     }
 
     game.game_state = out_params.game_state;
-
     if (create_graphics(&game.window, out_params.virtual_resolution, &game.memory_allocators.temp, &game.graphics) != RESULT_SUCCESS) {
         BUG("Failed to create graphics context.");
         return RESULT_FAILURE;
@@ -1859,6 +1880,10 @@ static void destroy_game(void) {
 
 #ifdef GAME_LOOP
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
+    (void)hInstance;
+    (void)hPrevInstance;
+    (void)lpCmdLine;
+    (void)nCmdShow;
 #ifdef HOT_RELOAD_HOST
     if (!potential_hot_reload(HOT_RELOAD_FORCED)) {
         BUG("Failed to load initial game DLL.");
@@ -1934,6 +1959,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         }
 
         draw_graphics(&game.graphics);
+
+        // print framerate
+        if (game.clock.time_since_previous_update > 0.0f) {
+            printf("FPS: %.2f\n", 1.0f / game.clock.time_since_previous_update);
+            fflush(stdout);
+        }
+
+        if (game.clock.time_since_previous_update < TARGET_FRAME_TIME) {
+            Sleep((DWORD)((TARGET_FRAME_TIME - game.clock.time_since_previous_update) * 1000.0f));
+        }
     }
 
 cleanup:

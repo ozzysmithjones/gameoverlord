@@ -1,0 +1,12 @@
+#ifndef ENGINE_CONFIG_H
+#define ENGINE_CONFIG_H
+
+#define ENABLE_SPRITE_RENDERER
+// #define ENABLE_GRID_RENDERER
+// #define ENABLE_CIRCLE_RENDERER
+
+
+
+
+
+#endif // ENGINE_CONFIG_H
