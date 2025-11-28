@@ -101,11 +101,11 @@ static inline color color_from_uint32(uint32_t rgba) {
     );
 }
 
-#define FIXED_TIME_STEP (1.0f / 120.0f)
+#define FIXED_TIME_STEP (1.0f / 60.0f)
 #define MAX_UPDATES_PER_FRAME 5
 
 #ifndef MAX_SPRITES
-#define MAX_SPRITES 4
+#define MAX_SPRITES 128
 #endif
 
 void draw_background_color(graphics* graphics, float r, float g, float b, float a);

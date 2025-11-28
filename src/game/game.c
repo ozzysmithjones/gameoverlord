@@ -65,13 +65,16 @@ typedef enum {
     ROTATION_CHANGES_MOVEMENT_DIRECTION,
 } rotation_mode;
 
-static void apply_angular_velocity(transform* transform, float delta_time, rotation_mode mode) {
+static void apply_angular_velocity(transform* transform, float delta_time) {
     ASSERT(transform != NULL, return, "Transform cannot be NULL");
     if (transform->angular_velocity == 0.0f) return;
     transform->rotation += transform->angular_velocity * delta_time;
-    if (mode == ROTATION_CHANGES_MOVEMENT_DIRECTION) {
-        transform->velocity = vector2_scale(vector2_from_angle(transform->rotation * M_PI), PLAYER_SPACESHIP_SPEED);
-    }
+}
+
+static void update_heading(transform* transform, float angle_offset_rad) {
+    ASSERT(transform != NULL, return, "Transform cannot be NULL");
+    if (transform->angular_velocity == 0.0f) return;
+    transform->velocity = vector2_scale(vector2_from_angle(-transform->rotation * M_PI + angle_offset_rad), PLAYER_SPACESHIP_SPEED);
 }
 
 static void handle_user_input(game_state* state, input* input) {
@@ -89,12 +92,13 @@ static void handle_user_input(game_state* state, input* input) {
 
 static void update_simulation(game_state* state, float delta_time) {
     ASSERT(state != NULL, return, "State cannot be NULL");
-    apply_angular_velocity(&state->player_spaceship.transform, delta_time, ROTATION_CHANGES_MOVEMENT_DIRECTION);
+    update_heading(&state->player_spaceship.transform, -M_PI / 2.0f);
+    apply_angular_velocity(&state->player_spaceship.transform, delta_time);
     apply_velocity(&state->player_spaceship.transform, delta_time);
 
     for (uint32_t i = 0; i < state->asteroids.count; ++i) {
         asteroid* asteroid = &state->asteroids.elements[i];
-        apply_angular_velocity(&asteroid->transform, delta_time, ROTATION_NORMAL);
+        apply_angular_velocity(&asteroid->transform, delta_time);
         apply_velocity(&asteroid->transform, delta_time);
     }
 }
@@ -113,14 +117,14 @@ static void draw_simulation(game_state* state, graphics* graphics) {
             (ast->size == ASTEROID_SIZE_MEDIUM) ? ASTEROID_MEDIUM_SAMPLE_POINT :
             ASTEROID_SMALL_SAMPLE_POINT,
             SAMPLE_SIZE,
-            ast->transform.rotation);
+            ast->transform.rotation * M_PI);
     }
 
     // Draw player spaceship
     draw_projected_sprite(graphics, &state->camera, state->player_spaceship.transform.position, DRAW_SIZE,
         PLAYER_SPACESHIP_SAMPLE_POINT,
         SAMPLE_SIZE,
-        state->player_spaceship.transform.rotation);
+        state->player_spaceship.transform.rotation * M_PI);
 }
 
 DLL_EXPORT result init(init_in_params* in, init_out_params* out) {
@@ -140,14 +144,14 @@ DLL_EXPORT result init(init_in_params* in, init_out_params* out) {
         memset(player, 0, sizeof(spaceship));
     }
 
-    /*
+
     {
         // Initialize some asteroids for demonstration
         for (uint32_t i = 0; i < 10; ++i) {
             asteroid* ast = &state->asteroids.elements[state->asteroids.count++];
             ast->transform.position = (vector2){ (float)(rand() % (TARGET_RESOLUTION)) - TARGET_RESOLUTION / 2.0f,
                                                  (float)(rand() % (TARGET_RESOLUTION)) - TARGET_RESOLUTION / 2.0f };
-            float angle = (float)(rand() % 360) * (3.14159f / 180.0f);
+            float angle = (float)(rand() % 360) * (M_PI / 180.0f);
             float speed = (float)(50 + rand() % 100);
             ast->transform.velocity = vector2_scale(vector2_from_angle(angle), speed);
             ast->transform.rotation = 0.0f;
@@ -156,7 +160,7 @@ DLL_EXPORT result init(init_in_params* in, init_out_params* out) {
             ast->content = ASTEROID_CONTENT_NONE;
         }
     }
-        */
+
 
     out->game_state = (void*)state;
     out->virtual_resolution = (vector2int){ 1024, 1024 };

@@ -245,8 +245,7 @@ result find_files_with_extension(string directory, string extension, bump_alloca
     WIN32_FIND_DATAA find_data;
     HANDLE find_handle = FindFirstFileA(search_path, &find_data);
     if (find_handle == INVALID_HANDLE_VALUE) {
-        BUG("Failed to find any files in directory: %.*s", directory.length, directory.text);
-        return RESULT_FAILURE;
+        return RESULT_SUCCESS; // No files found is not an error
     }
     do {
         if (!(find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
@@ -1927,26 +1926,26 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 #ifdef HOT_RELOAD_HOST
         potential_hot_reload(HOT_RELOAD_IF_DLL_UPDATED);
 #endif
-        input* input_state = update_window_input(&game.window);
-
-        if (input_state->closed_window) {
-            break;
-        }
 
         { // Update game
             update_params update_params = { 0 };
             update_params.delta_time = FIXED_TIME_STEP; //game.clock.time_since_previous_update;
             update_params.audio = &game.audio;
             update_params.memory_allocators = &game.memory_allocators;
-            update_params.input = input_state;
             update_params.game_state = game.game_state;
 
             time_step_accumulator += game.clock.time_since_previous_update;
             uint32_t updates_this_frame = 0;
             while (time_step_accumulator >= FIXED_TIME_STEP && updates_this_frame < MAX_UPDATES_PER_FRAME) {
+                input* input_state = update_window_input(&game.window);
+                if (input_state->closed_window) {
+                    goto cleanup;
+                }
+
                 ++updates_this_frame;
-                update_params.delta_time = FIXED_TIME_STEP;
                 time_step_accumulator -= FIXED_TIME_STEP;
+                update_params.input = input_state;
+                update_params.delta_time = FIXED_TIME_STEP;
                 if (update(&update_params) != RESULT_SUCCESS) {
                     BUG("Failed to update game.");
                     goto cleanup;
@@ -1977,12 +1976,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         }
 
         present_graphics(&game.graphics);
-
-        // print framerate
-        if (game.clock.time_since_previous_update > 0.0f) {
-            printf("FPS: %.2f\n", 1.0f / game.clock.time_since_previous_update);
-            fflush(stdout);
-        }
     }
 
 cleanup:
