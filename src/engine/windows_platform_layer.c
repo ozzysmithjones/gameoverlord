@@ -680,7 +680,6 @@ typedef struct {
     size_t count;
 } sprite_instances;
 
-
 #define SWAPCHAIN_BUFFER_COUNT 2
 
 typedef struct graphics {
@@ -745,6 +744,7 @@ void draw_projected_sprite(graphics* graphics, const camera_2d* projection_camer
         (world_position.x - projection_camera->position.x) * projection_camera->zoom + projection_camera->offset.x,
         (world_position.y - projection_camera->position.y) * projection_camera->zoom + projection_camera->offset.y
     };
+
     vector2 screen_scale = {
         world_scale.x * projection_camera->zoom,
         world_scale.y * projection_camera->zoom
@@ -1967,6 +1967,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         draw_params draw_params = { 0 };
         draw_params.graphics = &game.graphics;
         draw_params.game_state = game.game_state;
+        draw_params.delta_time = game.clock.time_since_previous_update;
 
         draw(&draw_params);
 

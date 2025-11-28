@@ -364,6 +364,7 @@ typedef struct {
     void* game_state;
     bump_allocator* temp_allocator;
     graphics* graphics;
+    float delta_time;
 } draw_params;
 
 typedef struct {
