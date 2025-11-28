@@ -172,13 +172,18 @@ DLL_EXPORT result update(update_params* in) {
     ASSERT(in->game_state, return RESULT_FAILURE, "Game state is NULL in update.");
     game_state* state = (game_state*)in->game_state;
     handle_user_input(state, in->input);
-    update_simulation(state, in->time.time_since_previous_update);
-
+    update_simulation(state, in->delta_time);
     state->camera.position = state->player_spaceship.transform.position;
-    draw_simulation(state, in->graphics);
     return RESULT_SUCCESS;
 }
 
-DLL_EXPORT void shutdown(shutdown_params* in) {
+DLL_EXPORT void draw(draw_params* in) {
+    ASSERT(in->game_state, return, "Game state is NULL in draw.");
+    ASSERT(in->graphics, return, "Graphics context is NULL in draw.");
+    game_state* state = (game_state*)in->game_state;
+    draw_simulation(state, in->graphics);
+}
+
+DLL_EXPORT void cleanup(cleanup_params* in) {
     (void)in;
 }

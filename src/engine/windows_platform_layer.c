@@ -14,22 +14,28 @@
 #include "platform_layer.h"
 #include "asset_files.h"
 
-//#define GAME_LOOP
+
+
 #ifdef GAME_LOOP
+/*
+=============================================================================================================================
+    Game Loop Function Types
+=============================================================================================================================
+*/
+#define X(return_value, name, ...) typedef return_value(*name##_function)(__VA_ARGS__);
+HOT_RELOAD_FUNCTIONS()
+#undef X
 
-typedef result(*init_function)(init_in_params* params, init_out_params* out_params);
-typedef result(*start_function)(start_params* params);
-typedef result(*update_function)(update_params* params);
-typedef void (*shutdown_function)(shutdown_params* params);
-
-//#define HOT_RELOAD_HOST
 #ifdef HOT_RELOAD_HOST
+/*
+=============================================================================================================================
+    Hot reloading function pointers
+=============================================================================================================================
+*/
 
-// Function pointers for linking dynamically with hot reloading:
-init_function init;
-start_function start;
-update_function update;
-shutdown_function shutdown;
+#define X(return_value, name, ...) static name##_function name = NULL;
+HOT_RELOAD_FUNCTIONS()
+#undef X
 
 // DLL path for hot reload:
 #ifndef HOT_RELOAD_DLL_PATH
@@ -37,17 +43,18 @@ shutdown_function shutdown;
 #define HOT_RELOAD_DLL_TEMP_PATH HOT_RELOAD_DLL_PATH ".temp"
 #endif
 #else
+
+/*
+=============================================================================================================================
+    static-linking function declarations.
+=============================================================================================================================
+*/
+
 // Function declarations for static linking without hot reloading:
-extern result init(init_in_params* in, init_out_params* out);
-extern result start(start_params* in);
-extern result update(update_params* in);
-extern void shutdown(shutdown_params* in);
+#define X(return_value, name, ...) return_value name(__VA_ARGS__);
+HOT_RELOAD_FUNCTIONS()
+#undef X
 #endif // HOT_RELOAD_HOST
-#else
-result init(init_in_params* in, init_out_params* out);
-result start(start_params* in);
-result update(update_params* in);
-void shutdown(shutdown_params* in);
 #endif // GAME_LOOP
 
 /*
@@ -558,7 +565,6 @@ static input* update_window_input(window* window) {
     while (PeekMessage(&msg, window->handle, 0, 0, PM_REMOVE)) {
         if (msg.message == WM_QUIT) {
             input_state->closed_window = true;
-            break;
         }
         TranslateMessage(&msg);
         DispatchMessage(&msg);
@@ -837,6 +843,7 @@ static result create_graphics(window* window, vector2int virtual_resolution, bum
     swap_chain_desc.OutputWindow = window->handle;
     swap_chain_desc.SampleDesc.Count = 1;
     swap_chain_desc.SampleDesc.Quality = 0;
+    //swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swap_chain_desc.Windowed = (window->mode != WINDOW_MODE_FULLSCREEN);
 
     UINT device_flags = 0;
@@ -1211,7 +1218,7 @@ static void handle_window_resize(graphics* graphics, uint32_t min_x, uint32_t mi
     graphics->context->lpVtbl->RSSetViewports(graphics->context, 1, &graphics->viewport);
 }
 
-static void draw_graphics(graphics* graphics) {
+static void present_graphics(graphics* graphics) {
     ASSERT(graphics != NULL, return, "Graphics pointer cannot be NULL");
     // Draw call
     UINT vertex_count = 6; // Two triangles per quad
@@ -1261,9 +1268,11 @@ static void destroy_graphics(graphics* graphics) {
         graphics->sampler_state->lpVtbl->Release(graphics->sampler_state);
         graphics->sampler_state = NULL;
     }
-    if (graphics->instance_buffer) {
-        graphics->instance_buffer->lpVtbl->Release(graphics->instance_buffer);
-        graphics->instance_buffer = NULL;
+    for (uint32_t i = 0; i < SWAPCHAIN_BUFFER_COUNT; ++i) {
+        if (graphics->instance_buffers[i]) {
+            graphics->instance_buffers[i]->lpVtbl->Release(graphics->instance_buffers[i]);
+            graphics->instance_buffers[i] = NULL;
+        }
     }
     if (graphics->vertex_buffer) {
         graphics->vertex_buffer->lpVtbl->Release(graphics->vertex_buffer);
@@ -1797,6 +1806,7 @@ result wait_condition_variable(condition_variable* cv, mutex* m) {
     return RESULT_SUCCESS;
 }
 
+#ifdef GAME_LOOP
 /*
 =============================================================================================================================
     Game Loop
@@ -1862,11 +1872,6 @@ static result create_game(void) {
 }
 
 static void destroy_game(void) {
-    shutdown_params shutdown_params = { 0 };
-    shutdown_params.game_state = game.game_state;
-    shutdown_params.memory_allocators = &game.memory_allocators;
-    shutdown(&shutdown_params);
-
     destroy_audio(&game.audio);
     destroy_graphics(&game.graphics);
     destroy_window(&game.window);
@@ -1878,7 +1883,7 @@ static void destroy_game(void) {
 #endif
 }
 
-#ifdef GAME_LOOP
+
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
     (void)hInstance;
     (void)hPrevInstance;
@@ -1911,20 +1916,42 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
     // update the clock just before the first frame so delta time is not too big.
     update_clock(&game.clock);
-
+    float time_step_accumulator = 0.0f;
     /*-----------------------------------------------------------------*/
     // Main loop
     while (1) {
-        update_clock(&game.clock);
         update_audio(&game.audio, game.clock.time_since_previous_update);
         reset_bump_allocator(&game.memory_allocators.temp);
+        update_clock(&game.clock);
 
 #ifdef HOT_RELOAD_HOST
         potential_hot_reload(HOT_RELOAD_IF_DLL_UPDATED);
 #endif
         input* input_state = update_window_input(&game.window);
+
         if (input_state->closed_window) {
             break;
+        }
+
+        { // Update game
+            update_params update_params = { 0 };
+            update_params.delta_time = FIXED_TIME_STEP; //game.clock.time_since_previous_update;
+            update_params.audio = &game.audio;
+            update_params.memory_allocators = &game.memory_allocators;
+            update_params.input = input_state;
+            update_params.game_state = game.game_state;
+
+            time_step_accumulator += game.clock.time_since_previous_update;
+            uint32_t updates_this_frame = 0;
+            while (time_step_accumulator >= FIXED_TIME_STEP && updates_this_frame < MAX_UPDATES_PER_FRAME) {
+                ++updates_this_frame;
+                update_params.delta_time = FIXED_TIME_STEP;
+                time_step_accumulator -= FIXED_TIME_STEP;
+                if (update(&update_params) != RESULT_SUCCESS) {
+                    BUG("Failed to update game.");
+                    goto cleanup;
+                }
+            }
         }
 
         { // Map the instance buffer to update instance data
@@ -1938,41 +1965,33 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             game.graphics.sprite_instances.count = 0;
         }
 
-        { // Update game
-            update_params update_params = { 0 };
-            update_params.time = game.clock;
-            update_params.graphics = &game.graphics;
-            update_params.audio = &game.audio;
-            update_params.memory_allocators = &game.memory_allocators;
-            update_params.input = input_state;
-            update_params.game_state = game.game_state;
+        draw_params draw_params = { 0 };
+        draw_params.graphics = &game.graphics;
+        draw_params.game_state = game.game_state;
 
-            if (update(&update_params) != RESULT_SUCCESS) {
-                BUG("Failed to update game.");
-                break;
-            }
-        }
+        draw(&draw_params);
 
 
         { // Unmap the instance buffer after updating sprite data (presumably from update game)
             game.graphics.context->lpVtbl->Unmap(game.graphics.context, (ID3D11Resource*)game.graphics.instance_buffer, 0);
         }
 
-        draw_graphics(&game.graphics);
+        present_graphics(&game.graphics);
 
         // print framerate
         if (game.clock.time_since_previous_update > 0.0f) {
             printf("FPS: %.2f\n", 1.0f / game.clock.time_since_previous_update);
             fflush(stdout);
         }
-
-        if (game.clock.time_since_previous_update < TARGET_FRAME_TIME) {
-            Sleep((DWORD)((TARGET_FRAME_TIME - game.clock.time_since_previous_update) * 1000.0f));
-        }
     }
 
 cleanup:
+    cleanup_params cleanup_params = { 0 };
+    cleanup_params.game_state = game.game_state;
+    cleanup_params.memory_allocators = &game.memory_allocators;
+    cleanup(&cleanup_params);
     destroy_game();
+
     return 0;
 }
 
