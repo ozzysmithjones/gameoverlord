@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.10.0)
 project(gameoverlord VERSION 0.1.0 LANGUAGES C)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON) 
 
-set(CMAKE_C_STANDARD 17)
-set(CMAKE_C_STANDARD_REQUIRED OFF)
+# Add custom command to copy the generated compile_commands.json to the project root
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Glob source files
 # file(GLOB_RECURSE SOURCES
@@ -24,7 +27,7 @@ SET(GAME_SOURCES
     ${GAME_DIR}/game.h
    )
 
-SET(HOT_RELOAD OFF)
+SET(HOT_RELOAD ON)
 
 if(HOT_RELOAD)
     add_executable(engine WIN32 ${ENGINE_SOURCES})
@@ -61,3 +64,4 @@ else()
     )
 
 endif()
+

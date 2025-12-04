@@ -177,7 +177,7 @@ result string_format(string_format_buffer* out_format_string, string format, ...
     result name##_remove(name* array, uint32_t index) { \
         ASSERT(array != NULL, return RESULT_FAILURE, "Capped array " #name " cannot be NULL"); \
         ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %u", index, array->count); \
-        if (array->count > 0) { \
+        if (index != array->count - 1) { \
             memmove(&array->elements[index], &array->elements[index + 1], (array->count - (index - 1)) * sizeof(element_type)); \
         } \
         --array->count; \
@@ -186,7 +186,7 @@ result string_format(string_format_buffer* out_format_string, string format, ...
     result name##_remove_swap(name* array, uint32_t index) { \
         ASSERT(array != NULL, return RESULT_FAILURE, "Capped array " #name " cannot be NULL"); \
         ASSERT(index < array->count, return RESULT_FAILURE, "Index out of bounds: %u. Count = %u", index, array->count); \
-        if (array->count > 0) { \
+        if (index != array->count - 1) { \
             memcpy(&array->elements[index], &array->elements[array->count - 1], sizeof(element_type)); \
         } \
         --array->count; \

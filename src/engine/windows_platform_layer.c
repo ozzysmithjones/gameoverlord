@@ -14,8 +14,6 @@
 #include "platform_layer.h"
 #include "asset_files.h"
 
-
-
 #ifdef GAME_LOOP
 /*
 =============================================================================================================================
@@ -581,7 +579,7 @@ static void destroy_window(window* window) {
 bool is_key_down(input* input_state, keyboard_key key) {
     ASSERT(input_state != NULL, return false, "Input state cannot be NULL");
     ASSERT(key >= 0 && key < 256, return false, "Key %d out of range", key);
-    size_t index = key >> 6;
+    uint32_t index = key >> 6;
     uint64_t mask = (uint64_t)1 << (key & 63);
     return (input_state->keys_pressed_bitset[index] & mask) != 0 &&
         (input_state->keys_modified_this_frame_bitset[index] & mask) != 0;
@@ -590,7 +588,7 @@ bool is_key_down(input* input_state, keyboard_key key) {
 bool is_key_held_down(input* input_state, keyboard_key key) {
     ASSERT(input_state != NULL, return false, "Input state cannot be NULL");
     ASSERT(key >= 0 && key < 256, return false, "Key %d out of range", key);
-    size_t index = key >> 6;
+    uint32_t index = key >> 6;
     uint64_t mask = (uint64_t)1 << (key & 63);
     return (input_state->keys_pressed_bitset[index] & mask) != 0;
 }
@@ -598,7 +596,7 @@ bool is_key_held_down(input* input_state, keyboard_key key) {
 bool is_key_up(input* input_state, keyboard_key key) {
     ASSERT(input_state != NULL, return false, "Input state cannot be NULL");
     ASSERT(key >= 0 && key < 256, return false, "Key %d out of range", key);
-    size_t index = key >> 6;
+    uint32_t index = key >> 6;
     uint64_t mask = (uint64_t)1 << (key & 63);
     return (input_state->keys_pressed_bitset[index] & mask) == 0 &&
         (input_state->keys_modified_this_frame_bitset[index] & mask) != 0;
@@ -1679,7 +1677,7 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
         app_dll = NULL;
         init = NULL;
         update = NULL;
-        shutdown = NULL;
+        cleanup = NULL;
     }
 
     while (!CopyFileA(HOT_RELOAD_DLL_PATH, HOT_RELOAD_DLL_TEMP_PATH, FALSE)) {
@@ -1695,8 +1693,9 @@ static bool potential_hot_reload(hot_reload_condition hot_reload_condition) {
     init = (init_function)GetProcAddress(app_dll, "init");
     start = (start_function)GetProcAddress(app_dll, "start");
     update = (update_function)GetProcAddress(app_dll, "update");
-    shutdown = (shutdown_function)GetProcAddress(app_dll, "shutdown");
-    if (!init || !start || !update || !shutdown) {
+    draw = (draw_function)GetProcAddress(app_dll, "draw");
+    cleanup = (cleanup_function)GetProcAddress(app_dll, "cleanup");
+    if (!init || !start || !draw || !update || !cleanup) {
         BUG("Failed to get function addresses from %s", HOT_RELOAD_DLL_TEMP_PATH);
         return false;
     }

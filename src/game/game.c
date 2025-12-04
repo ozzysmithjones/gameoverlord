@@ -22,7 +22,10 @@
 #define ASTEROID_MEDIUM_SAMPLE_POINT (vector2int){3 * SPRITE_SIZE, 3 * SPRITE_SIZE }
 #define ASTEROID_SMALL_SAMPLE_POINT (vector2int){4 * SPRITE_SIZE, 3 * SPRITE_SIZE }
 
+#define PROJECTILE_SAMPLE_POINT (vector2int){4 * SPRITE_SIZE, 3 * SPRITE_SIZE }
+
 #define MAX_ASTEROIDS 128
+#define MAX_PROJECTILES 16
 
 typedef enum {
     ANIMATION_TYPE_NONE,
@@ -71,7 +74,16 @@ DECLARE_CAPPED_ARRAY(asteroids, asteroid, MAX_ASTEROIDS)
 IMPLEMENT_CAPPED_ARRAY(asteroids, asteroid, MAX_ASTEROIDS)
 
 typedef struct {
+    transform transform;
+    float lifetime;
+} projectile;
+
+DECLARE_CAPPED_ARRAY(projectiles, projectile, MAX_PROJECTILES)
+IMPLEMENT_CAPPED_ARRAY(projectiles, projectile, MAX_PROJECTILES)
+
+typedef struct {
     spaceship player_spaceship;
+    projectiles projectiles;
     asteroids asteroids;
 } game_state;
 
@@ -91,9 +103,30 @@ static void apply_angular_velocity(transform* transform, float delta_time) {
     transform->rotation += transform->angular_velocity * delta_time;
 }
 
-static void control_player_spaceship(spaceship* player, input* input, float delta_time) {
+static void spawn_asteroid(asteroids* asteroids, vector2 position, asteroid_size size) {
+    ASSERT(asteroids != NULL, return, "Asteroids array cannot be NULL");
+    if (asteroids->count >= MAX_ASTEROIDS) {
+        asteroids_remove_swap(asteroids, 0);
+        ASSERT(asteroids->count < MAX_ASTEROIDS, return, "Failed to remove asteroid to make space for new one");
+    }
+
+    asteroid* ast = &asteroids->elements[asteroids->count];
+    ++asteroids->count;
+    ast->transform.position = position;
+    ast->transform.rotation = 0.0f;
+    ast->transform.angular_velocity = ((float)(rand() % 200) / 100.0f - 1.0f) * 1.0f; // random angular velocity between -1.0 and 1.0
+    float speed = ((float)(rand() % 200) / 100.0f) * 50.0f + 20.0f; // random speed between 20.0 and 70.0
+    float angle = ((float)(rand() % 360)) * (M_PI / 180.0f); // random direction
+    ast->transform.direction = vector2_from_angle(angle);
+    ast->transform.speed = speed;
+    ast->size = size;
+    ast->content = ASTEROID_CONTENT_NONE;
+}
+
+static void control_player_spaceship(spaceship* player, input* input, projectiles* projectiles, float delta_time) {
     ASSERT(player != NULL, return, "Player spaceship cannot be NULL");
     ASSERT(input != NULL, return, "Input state cannot be NULL");
+    ASSERT(projectiles != NULL, return, "Projectiles cannot be NULL");
 
     if (player->is_destroyed) {
         return;
@@ -156,6 +189,24 @@ static void control_player_spaceship(spaceship* player, input* input, float delt
     else if (player->transform.position.y > TARGET_RESOLUTION) {
         player->transform.position.y -= TARGET_RESOLUTION;
     }
+
+    if (is_key_down(input, KEY_SPACE)) {
+        if (projectiles->count >= MAX_PROJECTILES) {
+            projectiles_remove_swap(projectiles, 0);
+            ASSERT(projectiles->count < MAX_PROJECTILES, return, "Failed to remove projectile to make space for new one");
+        }
+
+        projectile* proj = &projectiles->elements[projectiles->count];
+        ++projectiles->count;
+        proj->transform.position = vector2_add(player->transform.position, vector2_scale(player->transform.direction, SPRITE_SIZE));
+        proj->transform.direction = player->transform.direction;
+        proj->transform.speed = PLAYER_SPACESHIP_SPEED * 2.0f;
+        proj->transform.rotation = player->transform.rotation;
+        proj->lifetime = 2.0f;
+
+        // player->is_destroyed = true;
+        // player->animation.type = ANIMATION_TYPE_EXPLOSION;
+    }
 }
 
 static void update_simulation(game_state* state, float delta_time) {
@@ -196,6 +247,48 @@ static void update_simulation(game_state* state, float delta_time) {
                 state->player_spaceship.transform.speed = 0.0f;
                 state->player_spaceship.transform.angular_velocity = 0.0f;
                 state->player_spaceship.is_destroyed = true;
+            }
+        }
+    }
+
+    for (int32_t i = (int32_t)state->projectiles.count - 1; i >= 0; --i) {
+        projectile* proj = &state->projectiles.elements[i];
+        proj->lifetime -= delta_time;
+        if (proj->lifetime <= 0.0f) {
+            projectiles_remove_swap(&state->projectiles, i);
+        }
+    }
+
+    for (uint32_t i = 0; i < state->projectiles.count; ++i) {
+        projectile* proj = &state->projectiles.elements[i];
+        apply_velocity(&proj->transform, delta_time);
+    }
+
+
+    for (int32_t i = (int32_t)state->asteroids.count - 1; i >= 0; --i) {
+        asteroid* ast = &state->asteroids.elements[i];
+        for (int32_t j = (int32_t)state->projectiles.count - 1; j >= 0; --j) {
+            projectile* proj = &state->projectiles.elements[j];
+
+            // check collision between projectile and asteroid
+            vector2 to_proj = vector2_sub(proj->transform.position, ast->transform.position);
+            float distance_sq = to_proj.x * to_proj.x + to_proj.y * to_proj.y;
+            float collision_distance = SPRITE_SIZE / 2.0f; // need to be very close for a hit
+            if (distance_sq < collision_distance * collision_distance) {
+                projectiles_remove_swap(&state->projectiles, j);
+                if (ast->size == ASTEROID_SIZE_LARGE) {
+                    spawn_asteroid(&state->asteroids, ast->transform.position, ASTEROID_SIZE_MEDIUM);
+                    spawn_asteroid(&state->asteroids, ast->transform.position, ASTEROID_SIZE_MEDIUM);
+                    spawn_asteroid(&state->asteroids, ast->transform.position, ASTEROID_SIZE_MEDIUM);
+                }
+                else if (ast->size == ASTEROID_SIZE_MEDIUM) {
+                    spawn_asteroid(&state->asteroids, ast->transform.position, ASTEROID_SIZE_SMALL);
+                    spawn_asteroid(&state->asteroids, ast->transform.position, ASTEROID_SIZE_SMALL);
+                }
+
+                asteroids_remove_swap(&state->asteroids, i);
+
+                break;
             }
         }
     }
@@ -304,6 +397,15 @@ static void draw_simulation(game_state* state, graphics* graphics, float delta_t
             ast->transform.rotation * M_PI);
     }
 
+    // Draw projectiles
+    for (uint32_t i = 0; i < state->projectiles.count; ++i) {
+        projectile* proj = &state->projectiles.elements[i];
+        draw_sprite(graphics, proj->transform.position, DRAW_SIZE,
+            PROJECTILE_SAMPLE_POINT,
+            SAMPLE_SIZE,
+            proj->transform.rotation * M_PI);
+    }
+
     // Draw player spaceship
     draw_player_spaceship(&state->player_spaceship, graphics, delta_time);
 }
@@ -351,7 +453,7 @@ DLL_EXPORT result start(start_params* in) {
 DLL_EXPORT result update(update_params* in) {
     ASSERT(in->game_state, return RESULT_FAILURE, "Game state is NULL in update.");
     game_state* state = (game_state*)in->game_state;
-    control_player_spaceship(&state->player_spaceship, in->input, in->delta_time);
+    control_player_spaceship(&state->player_spaceship, in->input, &state->projectiles, in->delta_time);
     update_simulation(state, in->delta_time);
     return RESULT_SUCCESS;
 }
