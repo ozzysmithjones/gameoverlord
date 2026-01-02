@@ -70,7 +70,6 @@ typedef struct {
 result create_clock(clock* clock);
 void update_clock(clock* clock);
 
-
 /*
 =============================================================================================================================
     Graphics
@@ -102,10 +101,11 @@ static inline color color_from_uint32(uint32_t rgba) {
     );
 }
 
-#define TARGET_FRAME_TIME (1.0f / 60.0f)
+#define FIXED_TIME_STEP (1.0f / 60.0f)
+#define MAX_UPDATES_PER_FRAME 5
 
 #ifndef MAX_SPRITES
-#define MAX_SPRITES 32
+#define MAX_SPRITES 128
 #endif
 
 void draw_background_color(graphics* graphics, float r, float g, float b, float a);
@@ -354,17 +354,23 @@ result wait_condition_variable(condition_variable* cv, mutex* m);
 
 typedef struct {
     void* game_state;
-    graphics* graphics;
     audio* audio;
     memory_allocators* memory_allocators;
     input* input;
-    clock time;
+    float delta_time;
 } update_params;
 
 typedef struct {
     void* game_state;
+    bump_allocator* temp_allocator;
+    graphics* graphics;
+    float delta_time;
+} draw_params;
+
+typedef struct {
+    void* game_state;
     memory_allocators* memory_allocators;
-} shutdown_params;
+} cleanup_params;
 
 typedef struct {
     void* game_state;
@@ -387,5 +393,51 @@ typedef struct {
     */
     vector2int virtual_resolution;
 } init_out_params;
+
+
+/*
+=============================================================================================================================
+    Hot-Reload function declarations
+=============================================================================================================================
+
+This is using an X-Macro pattern - each hot-reloadable function is wrapped with an "X". This is not a macro that is defined here,
+but the idea is that later on we can redefine X to generate different code. This is used to make a function pointer
+for every function when hot-reloading is enabled, and to make normal function declarations when hot-reloading is disabled.
+
+For example, the following wrapped declaration:
+X(result, init, init_in_params* in, init_out_params* out)
+
+can be redefined to make a function pointer like this:
+
+// define X to generate a function pointer...
+#define X(return_value, name, ...) typedef return_value(*name##_function)(__VA_ARGS__);
+
+// embed the list of functions so that every function is turned into a function pointer
+HOT_RELOAD_FUNCTIONS()
+
+// undef X to avoid polluting the global namespace
+#undef X
+
+later on we can generate function declarations the same way:
+// redefine X to generate normal function declarations
+#define X(return_value, name, ...) return_value name(__VA_ARGS__);
+
+// embed the list of functions so that every function is turned into a normal function declaration
+HOT_RELOAD_FUNCTIONS()
+
+// undef X to avoid polluting the global namespace
+#undef X
+
+// link to more information about X-Macros: https://en.wikipedia.org/wiki/X_Macro
+=============================================================================================================================
+*/
+
+
+#define HOT_RELOAD_FUNCTIONS() \
+    X(result, init, init_in_params* in, init_out_params* out) \
+    X(result, start, start_params* in) \
+    X(result, update, update_params* in) \
+    X(void, draw, draw_params* in) \
+    X(void, cleanup, cleanup_params* in) \
 
 #endif // PLATFORM_LAYER_H

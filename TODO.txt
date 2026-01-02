@@ -1,6 +1,7 @@
-TODO:
+TODO/IDEAS:
 
-- Implement Audio
-- Implement Texture arrays (to support multiple sprite-sheets at once)
-    - How to associate asset filenames with index values? (probably more ideal to use index/enums instead of hard-coded strings in code)
-- 
+- Possibly make a tool for making animations with sprite sheets. (selecting a region of the sprite sheet to be used as an animation).
+- Enable the ability swap out different game projects at runtime (not just hot-reload one project). Some kind of file explorer functionality
+to load a game.
+- Some kind of particle effect system using compute shaders to generate vertex/instance buffers that is then consumed by the graphics pipeline.
+- level editor. Could provide some kind of entity layout during game init so the level editor knows what layout the entities are and what they contain for display purposes.

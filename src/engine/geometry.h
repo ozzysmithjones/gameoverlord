@@ -455,8 +455,8 @@ static inline vector2 vector2_rotate(vector2 v, float angle_rad) {
     float cos_theta = cosf(angle_rad);
     float sin_theta = sinf(angle_rad);
     return (vector2) {
-        v.x * cos_theta - v.y * sin_theta,
-            v.x * sin_theta + v.y * cos_theta
+        v.x* cos_theta - v.y * sin_theta,
+        v.x* sin_theta + v.y * cos_theta
     };
 }
 

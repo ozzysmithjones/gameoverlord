@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "stdint.h": "c",
-        "stdalign.h": "c"
+        "stdalign.h": "c",
+        "dxgidebug.h": "c",
+        "xaudio2.h": "c"
     }
 }
